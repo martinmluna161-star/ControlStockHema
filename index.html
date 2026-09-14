@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Stock — San Luis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg: #16181A;
+    --panel: #1F2224;
+    --panel-2: #24272A;
+    --line: #34383C;
+    --line-soft: #2A2E31;
+    --text: #ECEEEF;
+    --text-dim: #9AA1A6;
+    --teal: #0094BA;
+    --teal-dim: #076E8C;
+    --amber: #E8A33D;
+    --red: #D65B4A;
+    --green: #4CAF7D;
+    --radius: 3px;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --display: 'Oswald', sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+  ::selection{ background: var(--teal); color: #05171B; }
+
+  /* ---------- LOGIN ---------- */
+  #login-screen{
+    position: fixed; inset: 0;
+    background:
+      linear-gradient(180deg, rgba(22,24,26,0.4), rgba(22,24,26,0.92)),
+      repeating-linear-gradient(135deg, #1A1D1F 0 2px, #191B1D 2px 34px);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 1000;
+  }
+  .login-card{
+    width: min(380px, 90vw);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 36px 32px 30px;
+  }
+  .login-tag{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--teal);
+    margin: 0 0 6px;
+  }
+  .login-card h1{
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 26px;
+    margin: 0 0 4px;
+    line-height: 1.15;
+  }
+  .login-card p{
+    color: var(--text-dim);
+    font-size: 13.5px;
+    margin: 0 0 22px;
+  }
+  .field label{
+    display:block; font-size: 12px; color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  input[type=password], input[type=text], input[type=number], select, textarea{
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 10px 12px;
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus{
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(0,148,186,0.18);
+  }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background: var(--teal);
+    color: #05171B;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 18px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: background .12s ease;
+  }
+  .btn:hover{ background: #00A9D4; }
+  .btn:active{ transform: translateY(1px); }
+  .btn:disabled{ opacity: .45; cursor: not-allowed; }
+  .btn-ghost{
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .btn-ghost:hover{ background: var(--panel-2); border-color: var(--text-dim); }
+  .btn-block{ width: 100%; margin-top: 18px; }
+  .login-error{
+    color: var(--red);
+    font-size: 12.5px;
+    margin-top: 10px;
+    min-height: 16px;
+  }
+
+  /* ---------- APP SHELL ---------- */
+  #app{ display:none; max-width: 1240px; margin: 0 auto; padding: 0 20px 60px; }
+  header.top{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    flex-wrap: wrap; gap: 16px;
+    padding: 28px 0 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brandblock .eyebrow{
+    font-family: var(--mono); font-size: 11px; color: var(--teal); letter-spacing: .06em;
+    margin: 0 0 4px;
+  }
+  .brandblock h1{
+    font-family: var(--display); font-weight: 600; font-size: 30px; margin: 0;
+  }
+  .top-actions{ display:flex; gap: 10px; align-items:center; }
+  #searchInput{ width: 260px; }
+
+  .stats{
+    display:grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--line);
+    margin: 18px 0 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow:hidden;
+  }
+  .stat{ background: var(--panel); padding: 14px 16px; }
+  .stat .num{ font-family: var(--mono); font-size: 22px; font-weight: 600; }
+  .stat .lbl{ font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+
+  .chips{ display:flex; flex-wrap: wrap; gap: 8px; align-items:center; margin-bottom: 18px; }
+  .chip{
+    font-family: var(--mono); font-size: 12px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    color: var(--text-dim);
+    background: var(--panel);
+    cursor: pointer;
+    user-select: none;
+  }
+  .chip.active{ border-color: var(--teal); color: var(--teal); background: rgba(0,148,186,0.1); }
+  .chips select{ width: auto; padding: 6px 10px; font-size: 12.5px; }
+
+  table{ width: 100%; border-collapse: collapse; }
+  thead th{
+    text-align:left; font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    letter-spacing: .04em;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg);
+  }
+  tbody td{
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 13.5px;
+    vertical-align: middle;
+  }
+  tbody tr:hover{ background: var(--panel-2); }
+  td.num, th.num{ font-family: var(--mono); }
+  .badge{
+    display:inline-block; font-family: var(--mono); font-size: 11px;
+    padding: 2px 7px; border-radius: 3px;
+  }
+  .badge.low{ background: rgba(214,91,74,0.16); color: var(--red); }
+  .badge.mid{ background: rgba(232,163,61,0.16); color: var(--amber); }
+  .badge.ok{ background: rgba(76,175,125,0.14); color: var(--green); }
+  .price-strike{ color: var(--text-dim); text-decoration: line-through; font-size: 12px; }
+  .price-final{ font-weight: 600; }
+  .row-btn{
+    font-family: var(--sans); font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: var(--radius);
+    border: 1px solid var(--teal-dim); color: var(--teal);
+    background: transparent; cursor: pointer;
+  }
+  .row-btn:hover{ background: rgba(0,148,186,0.1); }
+  .row-btn:disabled{ opacity:.3; cursor:not-allowed; border-color: var(--line); color: var(--text-dim); }
+
+  .empty-state{ padding: 60px 0; text-align:center; color: var(--text-dim); }
+  .empty-state strong{ color: var(--text); display:block; font-family: var(--display); font-size: 18px; margin-bottom: 6px; }
+
+  section.panel{
+    margin-top: 34px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+  }
+  .panel-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 14px 16px; border-bottom: 1px solid var(--line); cursor:pointer;
+  }
+  .panel-head h2{ font-family: var(--display); font-size: 16px; font-weight: 500; margin:0; }
+  .panel-body{ padding: 4px 16px 14px; max-height: 340px; overflow-y:auto; }
+  .panel-body.collapsed{ display:none; }
+  .mov-row{
+    display:grid; grid-template-columns: 92px 96px 1fr 60px 110px;
+    gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px; align-items:center;
+  }
+  .mov-row:last-child{ border-bottom: none; }
+  .mov-fecha{ font-family: var(--mono); color: var(--text-dim); font-size: 11px; }
+  .mov-tipo{ font-family: var(--mono); font-size: 11px; }
+  .mov-tipo.Ingreso{ color: var(--green); }
+  .mov-tipo.Despacho{ color: var(--amber); }
+  .mov-tipo.Traslado{ color: var(--teal); }
+  .mov-cant{ font-family: var(--mono); text-align:right; }
+  .mov-resp{ color: var(--text-dim); text-align:right; }
+
+  footer.credit{
+    margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--text-dim); text-align:center;
+  }
+  footer.credit a{ color: var(--teal); text-decoration:none; }
+
+  /* ---------- MODALS ---------- */
+  .modal-overlay{
+    position: fixed; inset:0; background: rgba(10,11,12,0.7);
+    display:none; align-items:center; justify-content:center; z-index: 900; padding: 20px;
+  }
+  .modal-overlay.open{ display:flex; }
+  .modal{
+    width: min(480px, 100%);
+    max-height: 88vh; overflow-y:auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 24px;
+  }
+  .modal.wide{ width: min(640px, 100%); }
+  .modal h2{ font-family: var(--display); font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .modal .subtitle{ color: var(--text-dim); font-size: 13px; margin: 0 0 20px; }
+  .field{ margin-bottom: 14px; }
+  .field-row{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .radio-group{ display:flex; flex-direction:column; gap: 8px; }
+  .radio-opt{
+    display:flex; align-items:center; gap: 10px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 12px; cursor:pointer; font-size: 13.5px;
+  }
+  .radio-opt.selected{ border-color: var(--teal); background: rgba(0,148,186,0.08); }
+  .radio-opt input{ width:auto; accent-color: var(--teal); }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 20px; }
+  .modal-close{ position:absolute; }
+  .modal-header-row{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .icon-btn{ background:none; border:none; color: var(--text-dim); font-size: 20px; cursor:pointer; line-height:1; }
+  .icon-btn:hover{ color: var(--text); }
+  .form-error{ color: var(--red); font-size: 12.5px; margin-top: 4px; min-height: 16px; }
+
+  .tabs{ display:flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tab-btn{
+    background:none; border:none; color: var(--text-dim); font-family: var(--sans); font-weight:600;
+    font-size: 13px; padding: 10px 4px; margin-right: 20px; cursor:pointer; border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active{ color: var(--text); border-bottom-color: var(--teal); }
+  .tab-pane{ display:none; }
+  .tab-pane.active{ display:block; }
+
+  .dropzone{
+    border: 1.5px dashed var(--line); border-radius: var(--radius);
+    padding: 28px 16px; text-align:center; color: var(--text-dim); font-size: 13px;
+    cursor:pointer;
+  }
+  .dropzone.drag{ border-color: var(--teal); color: var(--teal); }
+  .import-preview{ margin-top: 14px; max-height: 220px; overflow-y:auto; border: 1px solid var(--line); border-radius: var(--radius); }
+  .import-preview table{ font-size: 12px; }
+  .import-preview th, .import-preview td{ padding: 6px 8px; }
+  .progress-track{ background: var(--bg); border-radius: 20px; height: 6px; overflow:hidden; margin-top: 14px; }
+  .progress-bar{ background: var(--teal); height: 100%; width: 0%; transition: width .15s ease; }
+
+  .toast-stack{ position: fixed; bottom: 20px; right: 20px; display:flex; flex-direction:column; gap:8px; z-index: 1200; }
+  .toast{
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--teal);
+    padding: 12px 16px; border-radius: var(--radius); font-size: 13px; min-width: 240px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  .toast.error{ border-left-color: var(--red); }
+  .toast.success{ border-left-color: var(--green); }
+
+  @media (max-width: 720px){
+    .stats{ grid-template-columns: repeat(2,1fr); }
+    #searchInput{ width: 100%; }
+    .top-actions{ width:100%; }
+    .field-row{ grid-template-columns: 1fr; }
+    thead{ display:none; }
+    table, tbody, tr, td{ display:block; width:100%; }
+    tbody tr{ border-bottom: 1px solid var(--line); padding: 10px 0; }
+    tbody td{ border:none; padding: 3px 0; display:flex; justify-content:space-between; }
+    tbody td::before{ content: attr(data-label); color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+    .mov-row{ grid-template-columns: 1fr; gap:2px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login-screen">
+  <div class="login-card">
+    <p class="login-tag">ACCESO RESTRINGIDO</p>
+    <h1>Control de Stock<br>San Luis</h1>
+    <p>Ingresá la clave de acceso para ver la mercadería disponible y registrar movimientos.</p>
+    <div class="field">
+      <label for="passwordInput">Clave de acceso</label>
+      <input type="password" id="passwordInput" placeholder="••••••••••">
+    </div>
+    <button class="btn btn-block" id="loginBtn" onclick="intentarLogin()">Ingresar</button>
+    <p class="login-error" id="loginError"></p>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app">
+  <header class="top">
+    <div class="brandblock">
+      <p class="eyebrow">STOCK VALORIZADO · LOCAL SAN LUIS</p>
+      <h1>Mercadería disponible</h1>
+    </div>
+    <div class="top-actions">
+      <input type="text" id="searchInput" placeholder="Buscar por ubicación, prenda o talle…" oninput="renderTabla()">
+      <button class="btn" onclick="abrirIngreso()">+ Ingresar mercadería</button>
+    </div>
+  </header>
+
+  <div class="stats" id="statsBar"></div>
+
+  <div class="chips" id="chipsBar"></div>
+
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Ubicación</th>
+          <th>Prenda</th>
+          <th>Talle</th>
+          <th class="num">Cantidad</th>
+          <th class="num">Precio</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tablaBody"></tbody>
+    </table>
+  </div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <strong>No hay resultados</strong>
+    Probá con otra ubicación, prenda o talle.
+  </div>
+
+  <section class="panel">
+    <div class="panel-head" onclick="togglePanel()">
+      <h2>Movimientos recientes</h2>
+      <span class="icon-btn" id="panelToggleIcon">▾</span>
+    </div>
+    <div class="panel-body" id="movPanel"></div>
+  </section>
+
+  <footer class="credit">
+    Desarrollado por <a href="https://www.somoslogica.com.ar" target="_blank" rel="noopener">Lógica</a>
+  </footer>
+</div>
+
+<!-- ===================== MODAL: DESPACHO ===================== -->
+<div class="modal-overlay" id="modalDespacho">
+  <div class="modal">
+    <div class="modal-header-row">
+      <div>
+        <h2>Despachar</h2>
+        <p class="subtitle" id="despachoSubtitle"></p>
+      </div>
+      <button class="icon-btn" onclick="cerrarModal('modalDespacho')">✕</button>
+    </div>
+
+    <div class="field">
+      <label>Cantidad a despachar (disponible: <span id="despachoDisponible"></span>)</label>
+      <input type="number" id="despachoCantidad" min="1">
+    </div>
+
+    <div class="field">
+      <label>Tipo de despacho</label>
+      <div class="radio-group" id="despachoDestinoGroup">
+        <label class="radio-opt"><input type="radio" name="destino" value="Venta"> Venta</label>
+        <label class="radio-opt"><input type="radio" name="destino" value="San Juan"> Traslado a depósito San Juan</label>
+        <label class="radio-opt"><input type="radio" name="destino" value="Buenos Aires"> Traslado a depósito Buenos Aires</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Quién despacha</label>
+      <input type="text" id="despachoResponsable" placeholder="Nombre y apellido">
+    </div>
+
+    <p class="form-error" id="despachoError"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="cerrarModal('modalDespacho')">Cancelar</button>
+      <button class="btn" id="despachoConfirmBtn" onclick="confirmarDespacho()">Confirmar despacho</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: INGRESO ===================== -->
+<div class="modal-overlay" id="modalIngreso">
+  <div class="modal wide">
+    <div class="modal-header-row">
+      <div>
+        <h2>Ingresar mercadería</h2>
+        <p class="subtitle">Cargá un producto a la vez o importá varios desde Excel.</p>
+      </div>
+      <button class="icon-btn" onclick="cerrarModal('modalIngreso')">✕</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tabBtnUno" onclick="cambiarTabIngreso('uno')">Uno a uno</button>
+      <button class="tab-btn" id="tabBtnExcel" onclick="cambiarTabIngreso('excel')">Importar Excel</button>
+    </div>
+
+    <!-- TAB: uno a uno -->
+    <div class="tab-pane active" id="tabUno">
+      <div class="field-row">
+        <div class="field">
+          <label>Ubicación / Estantería</label>
+          <input type="text" id="ingUnoEstanteria" list="listaEstanterias" placeholder="Ej: Estantería 3">
+          <datalist id="listaEstanterias"></datalist>
+        </div>
+        <div class="field">
+          <label>Talle / Medida</label>
+          <input type="text" id="ingUnoTalle" placeholder="Ej: XL">
+        </div>
+      </div>
+      <div class="field">
+        <label>Prenda / Producto</label>
+        <input type="text" id="ingUnoProducto" list="listaProductos" placeholder="Ej: Campera Softshell Negro">
+        <datalist id="listaProductos"></datalist>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Cantidad</label>
+          <input type="number" id="ingUnoCantidad" min="1">
+        </div>
+        <div class="field">
+          <label>Precio lista</label>
+          <input type="number" id="ingUnoPrecioLista" min="0">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Precio descuento (opcional)</label>
+          <input type="number" id="ingUnoPrecioDescuento" min="0">
+        </div>
+        <div class="field">
+          <label>Quién ingresa</label>
+          <input type="text" id="ingUnoResponsable" placeholder="Nombre y apellido">
+        </div>
+      </div>
+      <p class="form-error" id="ingUnoError"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="cerrarModal('modalIngreso')">Cancelar</button>
+        <button class="btn" id="ingUnoConfirmBtn" onclick="confirmarIngresoUno()">Ingresar producto</button>
+      </div>
+    </div>
+
+    <!-- TAB: excel -->
+    <div class="tab-pane" id="tabExcel">
+      <p class="subtitle" style="margin-bottom:12px;">
+        Las columnas deben respetar el orden de la plantilla: Estantería, Producto, Talle / Medida, Cantidad, Precio Lista, Precio Descuento.
+      </p>
+      <button class="btn btn-ghost" onclick="descargarPlantilla()" style="margin-bottom:16px;">Descargar plantilla</button>
+
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        Arrastrá tu archivo .xlsx acá, o hacé clic para seleccionarlo
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+
+      <div id="importPreviewWrap" style="display:none;">
+        <p class="subtitle" id="importCount" style="margin: 14px 0 4px;"></p>
+        <div class="import-preview">
+          <table>
+            <thead><tr><th>Ubicación</th><th>Prenda</th><th>Talle</th><th>Cant.</th><th>P. Lista</th><th>P. Desc.</th></tr></thead>
+            <tbody id="importPreviewBody"></tbody>
+          </table>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>Quién ingresa este lote</label>
+          <input type="text" id="ingExcelResponsable" placeholder="Nombre y apellido">
+        </div>
+        <p class="form-error" id="ingExcelError"></p>
+        <div class="progress-track" id="importProgressTrack" style="display:none;">
+          <div class="progress-bar" id="importProgressBar"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="cerrarModal('modalIngreso')">Cancelar</button>
+          <button class="btn" id="importConfirmBtn" onclick="confirmarImportacion()">Confirmar importación</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+/* =========================================================
+   CONFIGURACIÓN — completar después de desplegar el Apps Script
+   ========================================================= */
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLRWwpK6Rs4ih_jKKoL5Kyg3M0VXrI6rY-6JG54nhHclkfCZrnLtp6aRIb-8qJnlbWog/exec';
+const HASH_ESPERADO = '8e0d154970b1530f23923f75584e841a95225586c4da8f287c7da149d1034f88';
+
+/* =========================================================
+   ESTADO
+   ========================================================= */
+let TOKEN = null;
+let STOCK = [];
+let MOVIMIENTOS = [];
+let FILTRO_ESTANTERIA = 'Todas';
+let ITEM_ACTIVO = null;
+let ARCHIVO_PARSEADO = [];
+
+/* =========================================================
+   UTILIDADES
+   ========================================================= */
+function normalizar(s){
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+function formatoMoneda(n){
+  if(n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + Number(n).toLocaleString('es-AR');
+}
+async function sha256Hex(texto){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+function mostrarToast(msg, tipo){
+  const stack = document.getElementById('toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast' + (tipo ? ' ' + tipo : '');
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+/* =========================================================
+   JSONP — comunicación con Apps Script
+   ========================================================= */
+let jsonpCounter = 0;
+function jsonpCall(params){
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + (jsonpCounter++) + '_' + Date.now();
+    const script = document.createElement('script');
+    const query = new URLSearchParams({ ...params, token: TOKEN, callback: cbName }).toString();
+    window[cbName] = (data) => {
+      resolve(data);
+      delete window[cbName];
+      script.remove();
+    };
+    script.onerror = () => {
+      reject(new Error('No se pudo conectar con el backend. Revisá APPS_SCRIPT_URL.'));
+      delete window[cbName];
+      script.remove();
+    };
+    script.src = APPS_SCRIPT_URL + '?' + query;
+    document.body.appendChild(script);
+  });
+}
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+async function intentarLogin(){
+  const pass = document.getElementById('passwordInput').value;
+  const errorEl = document.getElementById('loginError');
+  if(!pass){ errorEl.textContent = 'Ingresá una clave.'; return; }
+  const hash = await sha256Hex(pass);
+  if(hash !== HASH_ESPERADO){
+    errorEl.textContent = 'Clave incorrecta.';
+    return;
+  }
+  TOKEN = hash;
+  sessionStorage.setItem('stockToken', hash);
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  cargarDatos();
+}
+document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') intentarLogin();
+});
+(function restaurarSesion(){
+  const guardado = sessionStorage.getItem('stockToken');
+  if(guardado === HASH_ESPERADO){
+    TOKEN = guardado;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    cargarDatos();
+  }
+})();
+
+/* =========================================================
+   CARGA DE DATOS
+   ========================================================= */
+async function cargarDatos(){
+  try{
+    const resp = await jsonpCall({ action: 'getDatos' });
+    if(!resp.ok){ mostrarToast(resp.error || 'Error al cargar datos.', 'error'); return; }
+    STOCK = resp.stock;
+    MOVIMIENTOS = resp.movimientos;
+    poblarDatalists();
+    renderChips();
+    renderStats();
+    renderTabla();
+    renderMovimientos();
+  }catch(err){
+    mostrarToast(err.message, 'error');
+  }
+}
+
+function poblarDatalists(){
+  const estanterias = [...new Set(STOCK.map(i => i.estanteria))].sort();
+  const productos = [...new Set(STOCK.map(i => i.producto))].sort();
+  document.getElementById('listaEstanterias').innerHTML = estanterias.map(e => `<option value="${e}">`).join('');
+  document.getElementById('listaProductos').innerHTML = productos.map(p => `<option value="${p}">`).join('');
+}
+
+/* =========================================================
+   CHIPS DE UBICACIÓN
+   ========================================================= */
+function renderChips(){
+  const estanterias = [...new Set(STOCK.map(i => i.estanteria))];
+  const cont = document.getElementById('chipsBar');
+  cont.innerHTML = '';
+  const todas = document.createElement('div');
+  todas.className = 'chip' + (FILTRO_ESTANTERIA === 'Todas' ? ' active' : '');
+  todas.textContent = 'Todas las ubicaciones';
+  todas.onclick = () => { FILTRO_ESTANTERIA = 'Todas'; renderChips(); renderTabla(); };
+  cont.appendChild(todas);
+  estanterias.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (FILTRO_ESTANTERIA === e ? ' active' : '');
+    chip.textContent = e;
+    chip.onclick = () => { FILTRO_ESTANTERIA = e; renderChips(); renderTabla(); };
+    cont.appendChild(chip);
+  });
+}
+
+/* =========================================================
+   STATS
+   ========================================================= */
+function renderStats(){
+  const totalItems = STOCK.length;
+  const totalUnidades = STOCK.reduce((a,i) => a + i.cantidad, 0);
+  const valorLista = STOCK.reduce((a,i) => a + (i.precioLista ? i.precioLista * i.cantidad : 0), 0);
+  const valorFinal = STOCK.reduce((a,i) => a + ((i.precioDescuento ?? i.precioLista ?? 0) * i.cantidad), 0);
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat"><div class="num">${totalItems}</div><div class="lbl">Ítems distintos</div></div>
+    <div class="stat"><div class="num">${totalUnidades.toLocaleString('es-AR')}</div><div class="lbl">Unidades en stock</div></div>
+    <div class="stat"><div class="num">${formatoMoneda(valorLista)}</div><div class="lbl">Valorizado (precio lista)</div></div>
+    <div class="stat"><div class="num">${formatoMoneda(valorFinal)}</div><div class="lbl">Valorizado (precio final)</div></div>
+  `;
+}
+
+/* =========================================================
+   TABLA
+   ========================================================= */
+function renderTabla(){
+  const q = normalizar(document.getElementById('searchInput').value);
+  const filtrado = STOCK.filter(i => {
+    if(FILTRO_ESTANTERIA !== 'Todas' && i.estanteria !== FILTRO_ESTANTERIA) return false;
+    if(!q) return true;
+    return normalizar(i.estanteria).includes(q) || normalizar(i.producto).includes(q) || normalizar(i.talle).includes(q);
+  });
+
+  const tbody = document.getElementById('tablaBody');
+  document.getElementById('emptyState').style.display = filtrado.length ? 'none' : 'block';
+  tbody.innerHTML = filtrado.map(item => {
+    let badgeClase = 'ok', badgeTxt = 'stock ok';
+    if(item.cantidad <= 2){ badgeClase = 'low'; badgeTxt = 'bajo stock'; }
+    else if(item.cantidad <= 6){ badgeClase = 'mid'; badgeTxt = 'stock medio'; }
+
+    const precioHtml = item.precioDescuento
+      ? `<span class="price-strike">${formatoMoneda(item.precioLista)}</span> <span class="price-final">${formatoMoneda(item.precioDescuento)}</span>`
+      : `<span class="price-final">${formatoMoneda(item.precioLista)}</span>`;
+
+    return `
+      <tr>
+        <td data-label="Ubicación">${item.estanteria}</td>
+        <td data-label="Prenda">${item.producto}</td>
+        <td data-label="Talle" class="num">${item.talle}</td>
+        <td data-label="Cantidad" class="num">${item.cantidad} <span class="badge ${badgeClase}">${badgeTxt}</span></td>
+        <td data-label="Precio" class="num">${precioHtml}</td>
+        <td data-label=""><button class="row-btn" ${item.cantidad === 0 ? 'disabled' : ''} onclick="abrirDespacho(${item.fila})">Despachar</button></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+/* =========================================================
+   MOVIMIENTOS
+   ========================================================= */
+function renderMovimientos(){
+  const cont = document.getElementById('movPanel');
+  if(!MOVIMIENTOS.length){
+    cont.innerHTML = '<p style="color:var(--text-dim); font-size:13px; padding:12px 0;">Todavía no hay movimientos registrados.</p>';
+    return;
+  }
+  cont.innerHTML = MOVIMIENTOS.map(m => `
+    <div class="mov-row">
+      <span class="mov-fecha">${new Date(m.fecha).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</span>
+      <span class="mov-tipo ${m.tipo}">${m.detalle}</span>
+      <span>${m.producto} · ${m.talle}</span>
+      <span class="mov-cant">${m.tipo === 'Ingreso' ? '+' : '−'}${m.cantidad}</span>
+      <span class="mov-resp">${m.responsable}</span>
+    </div>
+  `).join('');
+}
+function togglePanel(){
+  const body = document.getElementById('movPanel');
+  const icon = document.getElementById('panelToggleIcon');
+  body.classList.toggle('collapsed');
+  icon.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
+}
+
+/* =========================================================
+   MODAL: DESPACHO
+   ========================================================= */
+function abrirDespacho(fila){
+  ITEM_ACTIVO = STOCK.find(i => i.fila === fila);
+  if(!ITEM_ACTIVO) return;
+  document.getElementById('despachoSubtitle').textContent =
+    `${ITEM_ACTIVO.producto} · Talle ${ITEM_ACTIVO.talle} · ${ITEM_ACTIVO.estanteria}`;
+  document.getElementById('despachoDisponible').textContent = ITEM_ACTIVO.cantidad;
+  document.getElementById('despachoCantidad').value = '';
+  document.getElementById('despachoCantidad').max = ITEM_ACTIVO.cantidad;
+  document.getElementById('despachoResponsable').value = '';
+  document.getElementById('despachoError').textContent = '';
+  document.querySelectorAll('#despachoDestinoGroup input').forEach(r => r.checked = false);
+  document.getElementById('modalDespacho').classList.add('open');
+}
+async function confirmarDespacho(){
+  const cantidad = Number(document.getElementById('despachoCantidad').value);
+  const destino = document.querySelector('#despachoDestinoGroup input:checked')?.value;
+  const responsable = document.getElementById('despachoResponsable').value.trim();
+  const errorEl = document.getElementById('despachoError');
+
+  if(!cantidad || cantidad <= 0){ errorEl.textContent = 'Ingresá una cantidad válida.'; return; }
+  if(cantidad > ITEM_ACTIVO.cantidad){ errorEl.textContent = 'La cantidad supera el stock disponible.'; return; }
+  if(!destino){ errorEl.textContent = 'Elegí Venta o un destino de traslado.'; return; }
+  if(!responsable){ errorEl.textContent = 'Indicá quién despacha.'; return; }
+
+  const btn = document.getElementById('despachoConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Despachando…';
+  try{
+    const resp = await jsonpCall({
+      action: 'despachar', fila: ITEM_ACTIVO.fila, cantidad, destino, responsable
+    });
+    if(!resp.ok){ errorEl.textContent = resp.error; return; }
+    mostrarToast(`Despacho registrado: ${cantidad} unidad(es) — ${destino === 'Venta' ? 'venta' : 'traslado a ' + destino}.`, 'success');
+    cerrarModal('modalDespacho');
+    cargarDatos();
+  }catch(err){
+    errorEl.textContent = err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirmar despacho';
+  }
+}
+document.querySelectorAll('#despachoDestinoGroup .radio-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('#despachoDestinoGroup .radio-opt').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    opt.querySelector('input').checked = true;
+  });
+});
+
+/* =========================================================
+   MODAL: INGRESO
+   ========================================================= */
+function abrirIngreso(){
+  cambiarTabIngreso('uno');
+  ['ingUnoEstanteria','ingUnoTalle','ingUnoProducto','ingUnoCantidad','ingUnoPrecioLista','ingUnoPrecioDescuento','ingUnoResponsable']
+    .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ingUnoError').textContent = '';
+  document.getElementById('modalIngreso').classList.add('open');
+}
+function cambiarTabIngreso(tab){
+  document.getElementById('tabBtnUno').classList.toggle('active', tab === 'uno');
+  document.getElementById('tabBtnExcel').classList.toggle('active', tab === 'excel');
+  document.getElementById('tabUno').classList.toggle('active', tab === 'uno');
+  document.getElementById('tabExcel').classList.toggle('active', tab === 'excel');
+}
+async function confirmarIngresoUno(){
+  const estanteria = document.getElementById('ingUnoEstanteria').value.trim();
+  const producto = document.getElementById('ingUnoProducto').value.trim();
+  const talle = document.getElementById('ingUnoTalle').value.trim();
+  const cantidad = Number(document.getElementById('ingUnoCantidad').value);
+  const precioLista = document.getElementById('ingUnoPrecioLista').value;
+  const precioDescuento = document.getElementById('ingUnoPrecioDescuento').value;
+  const responsable = document.getElementById('ingUnoResponsable').value.trim();
+  const errorEl = document.getElementById('ingUnoError');
+
+  if(!estanteria || !producto || !talle || !cantidad || cantidad <= 0){
+    errorEl.textContent = 'Completá ubicación, prenda, talle y cantidad.'; return;
+  }
+  if(!responsable){ errorEl.textContent = 'Indicá quién ingresa la mercadería.'; return; }
+
+  const btn = document.getElementById('ingUnoConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Ingresando…';
+  try{
+    const resp = await jsonpCall({
+      action: 'ingresar', estanteria, producto, talle, cantidad,
+      precioLista: precioLista || '', precioDescuento: precioDescuento || '', responsable
+    });
+    if(!resp.ok){ errorEl.textContent = resp.error; return; }
+    mostrarToast('Mercadería ingresada correctamente.', 'success');
+    cerrarModal('modalIngreso');
+    cargarDatos();
+  }catch(err){
+    errorEl.textContent = err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Ingresar producto';
+  }
+}
+
+/* ---------- Importar Excel ---------- */
+function descargarPlantilla(){
+  const headers = ['Estantería', 'Producto', 'Talle / Medida', 'Cantidad', 'Precio Lista', 'Precio Descuento'];
+  const ejemplo = ['Estantería 3', 'Campera Softshell Negro', 'XL', 5, 45000, ''];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ingreso');
+  XLSX.writeFile(wb, 'plantilla_ingreso_stock.xlsx');
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { if(e.dataTransfer.files[0]) procesarArchivo(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if(e.target.files[0]) procesarArchivo(e.target.files[0]); });
+
+function procesarArchivo(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wb = XLSX.read(e.target.result, { type: 'binary' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const cuerpo = filas.slice(1).filter(f => f.some(c => c !== ''));
+
+    ARCHIVO_PARSEADO = cuerpo.map(f => ({
+      estanteria: String(f[0] || '').trim(),
+      producto: String(f[1] || '').trim(),
+      talle: String(f[2] || '').trim(),
+      cantidad: Number(f[3] || 0),
+      precioLista: f[4] === '' ? '' : Number(f[4]),
+      precioDescuento: f[5] === '' ? '' : Number(f[5])
+    })).filter(r => r.estanteria && r.producto && r.talle && r.cantidad > 0);
+
+    document.getElementById('importPreviewWrap').style.display = 'block';
+    document.getElementById('importCount').textContent = `${ARCHIVO_PARSEADO.length} fila(s) lista(s) para importar.`;
+    document.getElementById('importPreviewBody').innerHTML = ARCHIVO_PARSEADO.map(r => `
+      <tr><td>${r.estanteria}</td><td>${r.producto}</td><td>${r.talle}</td><td>${r.cantidad}</td><td>${r.precioLista || '—'}</td><td>${r.precioDescuento || '—'}</td></tr>
+    `).join('');
+  };
+  reader.readAsBinaryString(file);
+}
+
+async function confirmarImportacion(){
+  const responsable = document.getElementById('ingExcelResponsable').value.trim();
+  const errorEl = document.getElementById('ingExcelError');
+  if(!ARCHIVO_PARSEADO.length){ errorEl.textContent = 'No hay filas válidas para importar.'; return; }
+  if(!responsable){ errorEl.textContent = 'Indicá quién ingresa este lote.'; return; }
+  errorEl.textContent = '';
+
+  const btn = document.getElementById('importConfirmBtn');
+  const track = document.getElementById('importProgressTrack');
+  const bar = document.getElementById('importProgressBar');
+  btn.disabled = true; track.style.display = 'block';
+
+  let ok = 0, fallidos = 0;
+  for(let i = 0; i < ARCHIVO_PARSEADO.length; i++){
+    const r = ARCHIVO_PARSEADO[i];
+    try{
+      const resp = await jsonpCall({ action: 'ingresar', ...r, responsable });
+      if(resp.ok) ok++; else fallidos++;
+    }catch(e){ fallidos++; }
+    bar.style.width = Math.round(((i+1) / ARCHIVO_PARSEADO.length) * 100) + '%';
+  }
+
+  mostrarToast(`Importación completa: ${ok} ingresados, ${fallidos} con error.`, fallidos ? 'error' : 'success');
+  btn.disabled = false; track.style.display = 'none'; bar.style.width = '0%';
+  ARCHIVO_PARSEADO = [];
+  document.getElementById('importPreviewWrap').style.display = 'none';
+  fileInput.value = '';
+  cerrarModal('modalIngreso');
+  cargarDatos();
+}
+
+/* =========================================================
+   MODALES: cierre genérico
+   ========================================================= */
+function cerrarModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+  ov.addEventListener('click', (e) => { if(e.target === ov) ov.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
