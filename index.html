@@ -199,6 +199,31 @@
   .row-btn:hover{ background: rgba(0,148,186,0.1); }
   .row-btn:disabled{ opacity:.3; cursor:not-allowed; border-color: var(--line); color: var(--text-dim); }
 
+  .checkbox-col{ width: 34px; text-align:center; }
+  input[type=checkbox]{ width:16px; height:16px; accent-color: var(--teal); cursor:pointer; }
+
+  .bulk-bar{
+    position: fixed; left:50%; bottom:22px; transform: translateX(-50%);
+    background: var(--panel); border:1px solid var(--teal-dim); border-radius: 30px;
+    padding: 8px 10px 8px 20px; display:none; align-items:center; gap:14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 800;
+  }
+  .bulk-bar.show{ display:flex; }
+  .bulk-bar .count{ font-family: var(--mono); font-size:13px; color: var(--text); white-space:nowrap; }
+  .bulk-bar .count strong{ color: var(--teal); }
+
+  .batch-list{ max-height: 260px; overflow-y:auto; margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 12px; }
+  .batch-item{
+    display:grid; grid-template-columns: 1fr 92px 28px; gap:10px; align-items:center;
+    padding: 9px 0; border-bottom:1px solid var(--line-soft); font-size:12.5px;
+  }
+  .batch-item:last-child{ border-bottom:none; }
+  .batch-item .meta{ line-height:1.35; }
+  .batch-item .meta .small{ color: var(--text-dim); font-size:11px; }
+  .batch-item input[type=number]{ padding:6px 8px; font-size:12.5px; }
+  .batch-remove{ background:none; border:none; color: var(--text-dim); cursor:pointer; font-size:16px; }
+  .batch-remove:hover{ color: var(--red); }
+
   .empty-state{ padding: 60px 0; text-align:center; color: var(--text-dim); }
   .empty-state strong{ color: var(--text); display:block; font-family: var(--display); font-size: 18px; margin-bottom: 6px; }
 
@@ -223,6 +248,7 @@
   .mov-tipo.Ingreso{ color: var(--green); }
   .mov-tipo.Despacho{ color: var(--amber); }
   .mov-tipo.Traslado{ color: var(--teal); }
+  .mov-tipo.Ajuste{ color: #B48CE0; }
   .mov-cant{ font-family: var(--mono); text-align:right; }
   .mov-resp{ color: var(--text-dim); text-align:right; }
 
@@ -334,6 +360,7 @@
     </div>
     <div class="top-actions">
       <input type="text" id="searchInput" placeholder="Buscar por ubicación, prenda o talle…" oninput="renderTabla()">
+      <button class="btn btn-ghost" onclick="exportarStockActual()">Exportar stock</button>
       <button class="btn" onclick="abrirIngreso()">+ Ingresar mercadería</button>
     </div>
   </header>
@@ -346,6 +373,7 @@
     <table>
       <thead>
         <tr>
+          <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)"></th>
           <th>Ubicación</th>
           <th>Prenda</th>
           <th>Talle</th>
@@ -375,9 +403,9 @@
   </footer>
 </div>
 
-<!-- ===================== MODAL: DESPACHO ===================== -->
+<!-- ===================== MODAL: DESPACHO (uno o varios) ===================== -->
 <div class="modal-overlay" id="modalDespacho">
-  <div class="modal">
+  <div class="modal wide">
     <div class="modal-header-row">
       <div>
         <h2>Despachar</h2>
@@ -386,13 +414,10 @@
       <button class="icon-btn" onclick="cerrarModal('modalDespacho')">✕</button>
     </div>
 
-    <div class="field">
-      <label>Cantidad a despachar (disponible: <span id="despachoDisponible"></span>)</label>
-      <input type="number" id="despachoCantidad" min="1">
-    </div>
+    <div class="batch-list" id="despachoBatchList"></div>
 
     <div class="field">
-      <label>Tipo de despacho</label>
+      <label>Tipo de despacho (aplica a todos los productos de esta lista)</label>
       <div class="radio-group" id="despachoDestinoGroup">
         <label class="radio-opt"><input type="radio" name="destino" value="Venta"> Venta</label>
         <label class="radio-opt"><input type="radio" name="destino" value="San Juan"> Traslado a depósito San Juan</label>
@@ -406,9 +431,48 @@
     </div>
 
     <p class="form-error" id="despachoError"></p>
+    <div class="progress-track" id="despachoProgressTrack" style="display:none;"><div class="progress-bar" id="despachoProgressBar"></div></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="cerrarModal('modalDespacho')">Cancelar</button>
       <button class="btn" id="despachoConfirmBtn" onclick="confirmarDespacho()">Confirmar despacho</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: AJUSTE DE STOCK (uno o varios) ===================== -->
+<div class="modal-overlay" id="modalAjuste">
+  <div class="modal wide">
+    <div class="modal-header-row">
+      <div>
+        <h2>Ajustar stock</h2>
+        <p class="subtitle" id="ajusteSubtitle">Corregí la cantidad real disponible de cada producto.</p>
+      </div>
+      <button class="icon-btn" onclick="cerrarModal('modalAjuste')">✕</button>
+    </div>
+
+    <div class="batch-list" id="ajusteBatchList"></div>
+
+    <div class="field">
+      <label>Motivo del ajuste (aplica a todos los productos de esta lista)</label>
+      <input type="text" id="ajusteMotivo" list="listaMotivos" placeholder="Ej: Conteo físico">
+      <datalist id="listaMotivos">
+        <option value="Conteo físico">
+        <option value="Rotura o daño">
+        <option value="Error de carga">
+        <option value="Devolución de cliente">
+      </datalist>
+    </div>
+
+    <div class="field">
+      <label>Quién ajusta</label>
+      <input type="text" id="ajusteResponsable" placeholder="Nombre y apellido">
+    </div>
+
+    <p class="form-error" id="ajusteError"></p>
+    <div class="progress-track" id="ajusteProgressTrack" style="display:none;"><div class="progress-bar" id="ajusteProgressBar"></div></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="cerrarModal('modalAjuste')">Cancelar</button>
+      <button class="btn" id="ajusteConfirmBtn" onclick="confirmarAjuste()">Confirmar ajuste</button>
     </div>
   </div>
 </div>
@@ -511,13 +575,20 @@
   </div>
 </div>
 
+<div class="bulk-bar" id="bulkBar">
+  <span class="count" id="bulkCount"></span>
+  <button class="btn" onclick="abrirDespachoMulti([...SELECCION])">Despachar</button>
+  <button class="btn btn-ghost" onclick="abrirAjusteMulti([...SELECCION])">Ajustar</button>
+  <button class="icon-btn" onclick="cancelarSeleccion()" title="Cancelar selección">✕</button>
+</div>
+
 <div class="toast-stack" id="toastStack"></div>
 
 <script>
 /* =========================================================
    CONFIGURACIÓN — completar después de desplegar el Apps Script
    ========================================================= */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLRWwpK6Rs4ih_jKKoL5Kyg3M0VXrI6rY-6JG54nhHclkfCZrnLtp6aRIb-8qJnlbWog/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx2PMWYZgAxg1mKKurfo-0qIf_-ZEAV-Qyx2s6OCguORHLjbMSGnNqQgJ24bzx4Is95Lg/exec';
 const HASH_ESPERADO = '8e0d154970b1530f23923f75584e841a95225586c4da8f287c7da149d1034f88';
 
 /* =========================================================
@@ -527,8 +598,10 @@ let TOKEN = null;
 let STOCK = [];
 let MOVIMIENTOS = [];
 let FILTRO_ESTANTERIA = 'Todas';
-let ITEM_ACTIVO = null;
 let ARCHIVO_PARSEADO = [];
+let SELECCION = new Set();      // filas seleccionadas para acciones en grupo
+let ITEMS_DESPACHO = [];        // items cargados en el modal de despacho (1 o varios)
+let ITEMS_AJUSTE = [];          // items cargados en el modal de ajuste (1 o varios)
 
 /* =========================================================
    UTILIDADES
@@ -674,13 +747,17 @@ function renderStats(){
 /* =========================================================
    TABLA
    ========================================================= */
-function renderTabla(){
+function obtenerFiltrado(){
   const q = normalizar(document.getElementById('searchInput').value);
-  const filtrado = STOCK.filter(i => {
+  return STOCK.filter(i => {
     if(FILTRO_ESTANTERIA !== 'Todas' && i.estanteria !== FILTRO_ESTANTERIA) return false;
     if(!q) return true;
     return normalizar(i.estanteria).includes(q) || normalizar(i.producto).includes(q) || normalizar(i.talle).includes(q);
   });
+}
+
+function renderTabla(){
+  const filtrado = obtenerFiltrado();
 
   const tbody = document.getElementById('tablaBody');
   document.getElementById('emptyState').style.display = filtrado.length ? 'none' : 'block';
@@ -695,15 +772,51 @@ function renderTabla(){
 
     return `
       <tr>
+        <td data-label="Seleccionar"><input type="checkbox" class="row-check" ${SELECCION.has(item.fila) ? 'checked' : ''} onchange="actualizarSeleccion(${item.fila}, this.checked)"></td>
         <td data-label="Ubicación">${item.estanteria}</td>
         <td data-label="Prenda">${item.producto}</td>
         <td data-label="Talle" class="num">${item.talle}</td>
         <td data-label="Cantidad" class="num">${item.cantidad} <span class="badge ${badgeClase}">${badgeTxt}</span></td>
         <td data-label="Precio" class="num">${precioHtml}</td>
-        <td data-label=""><button class="row-btn" ${item.cantidad === 0 ? 'disabled' : ''} onclick="abrirDespacho(${item.fila})">Despachar</button></td>
+        <td data-label="">
+          <button class="row-btn" ${item.cantidad === 0 ? 'disabled' : ''} onclick="abrirDespachoMulti([${item.fila}])">Despachar</button>
+          <button class="row-btn" style="margin-left:6px;" onclick="abrirAjusteMulti([${item.fila}])">Ajustar</button>
+        </td>
       </tr>
     `;
   }).join('');
+
+  const selectAll = document.getElementById('selectAllCheckbox');
+  const visiblesSeleccionados = filtrado.length > 0 && filtrado.every(i => SELECCION.has(i.fila));
+  selectAll.checked = visiblesSeleccionados;
+  selectAll.indeterminate = !visiblesSeleccionados && filtrado.some(i => SELECCION.has(i.fila));
+}
+
+/* =========================================================
+   SELECCIÓN EN GRUPO
+   ========================================================= */
+function toggleSelectAll(checkbox){
+  const filasVisibles = obtenerFiltrado().map(i => i.fila);
+  if(checkbox.checked){ filasVisibles.forEach(f => SELECCION.add(f)); }
+  else{ filasVisibles.forEach(f => SELECCION.delete(f)); }
+  renderTabla();
+  actualizarBulkBar();
+}
+function actualizarSeleccion(fila, checked){
+  if(checked) SELECCION.add(fila); else SELECCION.delete(fila);
+  actualizarBulkBar();
+  renderTabla();
+}
+function actualizarBulkBar(){
+  const bar = document.getElementById('bulkBar');
+  const n = SELECCION.size;
+  document.getElementById('bulkCount').innerHTML = `<strong>${n}</strong> seleccionado${n === 1 ? '' : 's'}`;
+  bar.classList.toggle('show', n > 0);
+}
+function cancelarSeleccion(){
+  SELECCION.clear();
+  renderTabla();
+  actualizarBulkBar();
 }
 
 /* =========================================================
@@ -720,10 +833,15 @@ function renderMovimientos(){
       <span class="mov-fecha">${new Date(m.fecha).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</span>
       <span class="mov-tipo ${m.tipo}">${m.detalle}</span>
       <span>${m.producto} · ${m.talle}</span>
-      <span class="mov-cant">${m.tipo === 'Ingreso' ? '+' : '−'}${m.cantidad}</span>
+      <span class="mov-cant">${signoCantidad(m)}</span>
       <span class="mov-resp">${m.responsable}</span>
     </div>
   `).join('');
+}
+function signoCantidad(m){
+  if(m.tipo === 'Ingreso') return '+' + m.cantidad;
+  if(m.tipo === 'Ajuste') return (m.cantidad >= 0 ? '+' : '') + m.cantidad;
+  return '−' + m.cantidad;
 }
 function togglePanel(){
   const body = document.getElementById('movPanel');
@@ -733,47 +851,80 @@ function togglePanel(){
 }
 
 /* =========================================================
-   MODAL: DESPACHO
+   MODAL: DESPACHO (uno o varios productos a la vez)
    ========================================================= */
-function abrirDespacho(fila){
-  ITEM_ACTIVO = STOCK.find(i => i.fila === fila);
-  if(!ITEM_ACTIVO) return;
-  document.getElementById('despachoSubtitle').textContent =
-    `${ITEM_ACTIVO.producto} · Talle ${ITEM_ACTIVO.talle} · ${ITEM_ACTIVO.estanteria}`;
-  document.getElementById('despachoDisponible').textContent = ITEM_ACTIVO.cantidad;
-  document.getElementById('despachoCantidad').value = '';
-  document.getElementById('despachoCantidad').max = ITEM_ACTIVO.cantidad;
+function abrirDespachoMulti(filas){
+  const items = filas.map(f => STOCK.find(i => i.fila === f)).filter(i => i && i.cantidad > 0);
+  if(!items.length){ mostrarToast('No hay stock disponible en la selección.', 'error'); return; }
+  ITEMS_DESPACHO = items.map(i => ({ ...i, cantidadDespacho: i.cantidad }));
   document.getElementById('despachoResponsable').value = '';
   document.getElementById('despachoError').textContent = '';
   document.querySelectorAll('#despachoDestinoGroup input').forEach(r => r.checked = false);
+  document.querySelectorAll('#despachoDestinoGroup .radio-opt').forEach(o => o.classList.remove('selected'));
+  renderBatchDespacho();
   document.getElementById('modalDespacho').classList.add('open');
 }
+function renderBatchDespacho(){
+  document.getElementById('despachoSubtitle').textContent = ITEMS_DESPACHO.length === 1
+    ? `${ITEMS_DESPACHO[0].producto} · Talle ${ITEMS_DESPACHO[0].talle} · ${ITEMS_DESPACHO[0].estanteria}`
+    : `${ITEMS_DESPACHO.length} productos seleccionados`;
+  document.getElementById('despachoBatchList').innerHTML = ITEMS_DESPACHO.map((it, idx) => `
+    <div class="batch-item">
+      <div class="meta">${it.producto}<div class="small">${it.estanteria} · Talle ${it.talle} · disponible ${it.cantidad}</div></div>
+      <input type="number" min="1" max="${it.cantidad}" value="${it.cantidadDespacho}"
+        onchange="ITEMS_DESPACHO[${idx}].cantidadDespacho = Number(this.value)">
+      <button class="batch-remove" onclick="quitarDeBatchDespacho(${idx})" title="Quitar de este despacho">✕</button>
+    </div>
+  `).join('');
+}
+function quitarDeBatchDespacho(idx){
+  ITEMS_DESPACHO.splice(idx, 1);
+  if(!ITEMS_DESPACHO.length){ cerrarModal('modalDespacho'); return; }
+  renderBatchDespacho();
+}
 async function confirmarDespacho(){
-  const cantidad = Number(document.getElementById('despachoCantidad').value);
   const destino = document.querySelector('#despachoDestinoGroup input:checked')?.value;
   const responsable = document.getElementById('despachoResponsable').value.trim();
   const errorEl = document.getElementById('despachoError');
 
-  if(!cantidad || cantidad <= 0){ errorEl.textContent = 'Ingresá una cantidad válida.'; return; }
-  if(cantidad > ITEM_ACTIVO.cantidad){ errorEl.textContent = 'La cantidad supera el stock disponible.'; return; }
   if(!destino){ errorEl.textContent = 'Elegí Venta o un destino de traslado.'; return; }
   if(!responsable){ errorEl.textContent = 'Indicá quién despacha.'; return; }
+  const invalido = ITEMS_DESPACHO.find(it => !it.cantidadDespacho || it.cantidadDespacho <= 0 || it.cantidadDespacho > it.cantidad);
+  if(invalido){ errorEl.textContent = `Revisá la cantidad de "${invalido.producto}" (disponible: ${invalido.cantidad}).`; return; }
+  errorEl.textContent = '';
 
   const btn = document.getElementById('despachoConfirmBtn');
+  const track = document.getElementById('despachoProgressTrack');
+  const bar = document.getElementById('despachoProgressBar');
   btn.disabled = true; btn.textContent = 'Despachando…';
-  try{
-    const resp = await jsonpCall({
-      action: 'despachar', fila: ITEM_ACTIVO.fila, cantidad, destino, responsable
-    });
-    if(!resp.ok){ errorEl.textContent = resp.error; return; }
-    mostrarToast(`Despacho registrado: ${cantidad} unidad(es) — ${destino === 'Venta' ? 'venta' : 'traslado a ' + destino}.`, 'success');
-    cerrarModal('modalDespacho');
-    cargarDatos();
-  }catch(err){
-    errorEl.textContent = err.message;
-  }finally{
-    btn.disabled = false; btn.textContent = 'Confirmar despacho';
+  if(ITEMS_DESPACHO.length > 1) track.style.display = 'block';
+
+  let ok = 0, fallidos = 0, ultimoError = '';
+  for(let i = 0; i < ITEMS_DESPACHO.length; i++){
+    const it = ITEMS_DESPACHO[i];
+    try{
+      const resp = await jsonpCall({ action: 'despachar', fila: it.fila, cantidad: it.cantidadDespacho, destino, responsable });
+      if(resp.ok) ok++; else { fallidos++; ultimoError = resp.error; }
+    }catch(e){ fallidos++; ultimoError = e.message; }
+    bar.style.width = Math.round(((i + 1) / ITEMS_DESPACHO.length) * 100) + '%';
   }
+
+  if(fallidos && !ok){
+    errorEl.textContent = ultimoError || 'No se pudo completar el despacho.';
+  }else{
+    const detalle = destino === 'Venta' ? 'venta' : 'traslado a ' + destino;
+    mostrarToast(
+      fallidos
+        ? `Despacho parcial: ${ok} ok, ${fallidos} con error — ${detalle}.`
+        : `Despacho registrado: ${ok} producto(s) — ${detalle}.`,
+      fallidos ? 'error' : 'success'
+    );
+    cerrarModal('modalDespacho');
+    SELECCION.clear(); actualizarBulkBar();
+    cargarDatos();
+  }
+  btn.disabled = false; btn.textContent = 'Confirmar despacho';
+  track.style.display = 'none'; bar.style.width = '0%';
 }
 document.querySelectorAll('#despachoDestinoGroup .radio-opt').forEach(opt => {
   opt.addEventListener('click', () => {
@@ -782,6 +933,79 @@ document.querySelectorAll('#despachoDestinoGroup .radio-opt').forEach(opt => {
     opt.querySelector('input').checked = true;
   });
 });
+
+/* =========================================================
+   MODAL: AJUSTE DE STOCK (uno o varios productos a la vez)
+   ========================================================= */
+function abrirAjusteMulti(filas){
+  const items = filas.map(f => STOCK.find(i => i.fila === f)).filter(Boolean);
+  if(!items.length) return;
+  ITEMS_AJUSTE = items.map(i => ({ ...i, nuevaCantidad: i.cantidad }));
+  document.getElementById('ajusteMotivo').value = '';
+  document.getElementById('ajusteResponsable').value = '';
+  document.getElementById('ajusteError').textContent = '';
+  renderBatchAjuste();
+  document.getElementById('modalAjuste').classList.add('open');
+}
+function renderBatchAjuste(){
+  document.getElementById('ajusteSubtitle').textContent = ITEMS_AJUSTE.length === 1
+    ? `${ITEMS_AJUSTE[0].producto} · Talle ${ITEMS_AJUSTE[0].talle} · ${ITEMS_AJUSTE[0].estanteria}`
+    : `${ITEMS_AJUSTE.length} productos seleccionados`;
+  document.getElementById('ajusteBatchList').innerHTML = ITEMS_AJUSTE.map((it, idx) => `
+    <div class="batch-item">
+      <div class="meta">${it.producto}<div class="small">${it.estanteria} · Talle ${it.talle} · actual ${it.cantidad}</div></div>
+      <input type="number" min="0" value="${it.nuevaCantidad}"
+        onchange="ITEMS_AJUSTE[${idx}].nuevaCantidad = Number(this.value)">
+      <button class="batch-remove" onclick="quitarDeBatchAjuste(${idx})" title="Quitar de este ajuste">✕</button>
+    </div>
+  `).join('');
+}
+function quitarDeBatchAjuste(idx){
+  ITEMS_AJUSTE.splice(idx, 1);
+  if(!ITEMS_AJUSTE.length){ cerrarModal('modalAjuste'); return; }
+  renderBatchAjuste();
+}
+async function confirmarAjuste(){
+  const motivo = document.getElementById('ajusteMotivo').value.trim();
+  const responsable = document.getElementById('ajusteResponsable').value.trim();
+  const errorEl = document.getElementById('ajusteError');
+
+  if(!motivo){ errorEl.textContent = 'Indicá el motivo del ajuste.'; return; }
+  if(!responsable){ errorEl.textContent = 'Indicá quién realiza el ajuste.'; return; }
+  const invalido = ITEMS_AJUSTE.find(it => it.nuevaCantidad === '' || it.nuevaCantidad === null || isNaN(it.nuevaCantidad) || it.nuevaCantidad < 0);
+  if(invalido){ errorEl.textContent = `Revisá la cantidad de "${invalido.producto}".`; return; }
+  errorEl.textContent = '';
+
+  const btn = document.getElementById('ajusteConfirmBtn');
+  const track = document.getElementById('ajusteProgressTrack');
+  const bar = document.getElementById('ajusteProgressBar');
+  btn.disabled = true; btn.textContent = 'Ajustando…';
+  if(ITEMS_AJUSTE.length > 1) track.style.display = 'block';
+
+  let ok = 0, fallidos = 0, ultimoError = '';
+  for(let i = 0; i < ITEMS_AJUSTE.length; i++){
+    const it = ITEMS_AJUSTE[i];
+    try{
+      const resp = await jsonpCall({ action: 'ajustar', fila: it.fila, nuevaCantidad: it.nuevaCantidad, motivo, responsable });
+      if(resp.ok) ok++; else { fallidos++; ultimoError = resp.error; }
+    }catch(e){ fallidos++; ultimoError = e.message; }
+    bar.style.width = Math.round(((i + 1) / ITEMS_AJUSTE.length) * 100) + '%';
+  }
+
+  if(fallidos && !ok){
+    errorEl.textContent = ultimoError || 'No se pudo completar el ajuste.';
+  }else{
+    mostrarToast(
+      fallidos ? `Ajuste parcial: ${ok} ok, ${fallidos} con error.` : `Ajuste registrado en ${ok} producto(s).`,
+      fallidos ? 'error' : 'success'
+    );
+    cerrarModal('modalAjuste');
+    SELECCION.clear(); actualizarBulkBar();
+    cargarDatos();
+  }
+  btn.disabled = false; btn.textContent = 'Confirmar ajuste';
+  track.style.display = 'none'; bar.style.width = '0%';
+}
 
 /* =========================================================
    MODAL: INGRESO
@@ -830,6 +1054,17 @@ async function confirmarIngresoUno(){
   }finally{
     btn.disabled = false; btn.textContent = 'Ingresar producto';
   }
+}
+
+/* ---------- Exportar stock actual (para editar/diagramar offline y reimportar) ---------- */
+function exportarStockActual(){
+  const headers = ['Estantería', 'Producto', 'Talle / Medida', 'Cantidad', 'Precio Lista', 'Precio Descuento'];
+  const filas = STOCK.map(i => [i.estanteria, i.producto, i.talle, i.cantidad, i.precioLista ?? '', i.precioDescuento ?? '']);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...filas]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `stock_san_luis_${fecha}.xlsx`);
 }
 
 /* ---------- Importar Excel ---------- */
