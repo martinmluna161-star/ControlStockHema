@@ -694,6 +694,7 @@
       <span id="etqZebraEstado">Buscando la Zebra…</span>
       <button class="btn btn-ghost" type="button" onclick="verificarZebra()">Reintentar</button>
       <button class="btn btn-ghost" type="button" onclick="imprimirPruebaZebra()" title="Imprime una etiqueta con un marco del tamaño elegido y un código de barra, para comprobar medidas y calibración">Etiqueta de prueba</button>
+      <button class="btn btn-ghost" type="button" onclick="imprimirDiagnosticoZebra()" title="Imprime 6 etiquetas (A a F) con distintas variantes de código de barras para detectar cuál acepta la impresora">Diagnóstico de barras</button>
     </div>
 
     <div class="etq-preview" id="etqPreview"></div>
@@ -1591,6 +1592,44 @@ function zplPrueba(fmt){
     `^FO8,${72 + alto + 4}^FB${PW - 16},1,0,C,0^A0N,22,22^FD123456^FS`,
     '^PQ1,0,1,N', '^XZ'
   ].join('\n') + '\n';
+}
+
+// Diagnóstico: 6 etiquetas con distintas variantes de código de barras. Cada una lleva su letra
+// impresa arriba; según cuáles salgan con barras se sabe qué comando acepta la impresora.
+function zplDiagnostico(fmt){
+  const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);
+  const cab = (letra, desc) => `^FO6,4^A0N,22,22^FD${letra}: ${desc}^FS`;
+  const L = [];
+  // A: lo más simple posible, sin ^PW/^LL/^CI/^BY, con línea de interpretación
+  L.push(['^XA', cab('A', 'basico'), '^FO20,34^BCN,70,Y,N,N^FD123456^FS', '^XZ']);
+  // B: con ancho de módulo explícito
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('B', 'BY2'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD123456^FS', '^XZ']);
+  // C: Code 39 en vez de Code 128
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('C', 'Code39'), '^BY2,3,70', '^FO20,34^B3N,N,70,N,N^FD123456^FS', '^XZ']);
+  // D: bloque negro sólido (prueba que la impresora imprime gráficos/negro)
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('D', 'bloque negro'), '^FO20,34^GB200,60,60^FS', '^XZ']);
+  // E: como las etiquetas reales (con ^CI28)
+  L.push(['^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0', cab('E', 'como real'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD100002^FS', '^XZ']);
+  // F: barras dibujadas a mano con ^GB (líneas de 3 y 6 puntos), sin ^BC
+  const barras = [];
+  let x = 20;
+  [3, 6, 3, 9, 3, 6, 3, 3, 9, 3, 6, 3].forEach((w, i) => { if(i % 2 === 0) barras.push(`^FO${x},34^GB${w},70,${w}^FS`); x += w + 3; });
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('F', 'rayas ^GB'), ...barras, '^XZ']);
+  return L.map(l => l.join('\n')).join('\n') + '\n';
+}
+
+async function imprimirDiagnosticoZebra(){
+  const errorEl = document.getElementById('etqError');
+  errorEl.textContent = '';
+  try{
+    if(!ZEBRA.device && !(await verificarZebra())){ errorEl.textContent = 'No se pudo conectar con la Zebra.'; return; }
+    const r = await bpFetch('write', { method: 'POST', body: JSON.stringify({ device: ZEBRA.device, data: zplDiagnostico(formatoActual()) }) });
+    if(!r.ok) throw new Error('Browser Print respondió ' + r.status);
+    mostrarToast('Diagnóstico enviado: salen 6 etiquetas (A a F).', 'success');
+  }catch(e){
+    ZEBRA.device = null;
+    errorEl.textContent = 'No se pudo imprimir el diagnóstico: ' + e.message;
+  }
 }
 
 function zplLote(){
