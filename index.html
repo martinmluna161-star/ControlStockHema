@@ -360,6 +360,16 @@
   .etq .e-precio{ flex: 0 0 auto; font-size: 9pt; font-weight:700; text-align:center; }
   .etq .e-error{ font-size:6pt; color:#b00; text-align:center; }
 
+  .zebra-estado{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    font-size:12.5px; color: var(--text-dim); margin: -4px 0 12px;
+  }
+  .zebra-estado .btn{ padding: 4px 10px; font-size:12px; }
+  .zebra-estado .dot{ width:9px; height:9px; border-radius:50%; background: var(--text-dim); flex:none; }
+  .zebra-estado .dot.ok{ background:#3FB68B; }
+  .zebra-estado .dot.mal{ background: var(--amber); }
+  .zebra-estado.mal{ color: var(--amber); }
+
   #printArea{ display:none; }
 
   @media print{
@@ -662,7 +672,7 @@
     <div class="field-row">
       <div class="field">
         <label>Formato de etiqueta</label>
-        <select id="etqFormato" onchange="renderPreviewEtiquetas()"></select>
+        <select id="etqFormato" onchange="cambioFormatoEtiqueta()"></select>
       </div>
       <div class="field">
         <label>Cantidad de copias</label>
@@ -674,12 +684,19 @@
     </div>
     <label class="check-line"><input type="checkbox" id="etqPrecio" onchange="renderPreviewEtiquetas()"> Incluir precio en la etiqueta</label>
 
+    <div class="zebra-estado" id="etqZebraBox" style="display:none;">
+      <span class="dot" id="etqZebraDot"></span>
+      <span id="etqZebraEstado">Buscando la Zebra…</span>
+      <button class="btn btn-ghost" type="button" onclick="verificarZebra()">Reintentar</button>
+    </div>
+
     <div class="etq-preview" id="etqPreview"></div>
     <p class="subtitle" id="etqTotal" style="margin:0;"></p>
 
     <p class="form-error" id="etqError"></p>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="cerrarModal('modalEtiquetas')">Cerrar</button>
+      <button class="btn btn-ghost" id="etqZplBtn" style="display:none;" onclick="descargarZPL()" title="Guarda las etiquetas en un archivo .zpl para enviarlo a la impresora a mano">Descargar .zpl</button>
       <button class="btn" id="etqPrintBtn" onclick="imprimirEtiquetas()">Imprimir etiquetas</button>
     </div>
   </div>
@@ -1255,10 +1272,16 @@ async function confirmarImportacion(){
    CÓDIGOS DE BARRA — generación e impresión de etiquetas
    ========================================================= */
 const FORMATOS_ETIQUETA = {
-  termica5030: { nombre: 'Térmica 50 × 30 mm (una etiqueta por página)', w: 50, h: 30, hoja: false },
-  termica6040: { nombre: 'Térmica 60 × 40 mm (una etiqueta por página)', w: 60, h: 40, hoja: false },
-  a4:          { nombre: 'Hoja A4 — grilla de 4 × 9 (45 × 28 mm)',      w: 45, h: 28, hoja: true, cols: 4, gap: 2, margen: 10 }
+  // Zebra ZD220 (203 dpi = 8 puntos/mm) — se imprime en ZPL nativo vía Zebra Browser Print
+  zebra5030:   { grupo: 'zebra',   nombre: 'Zebra · 50 × 30 mm', w: 50, h: 30, zpl: true },
+  zebra6040:   { grupo: 'zebra',   nombre: 'Zebra · 60 × 40 mm', w: 60, h: 40, zpl: true },
+  zebra4025:   { grupo: 'zebra',   nombre: 'Zebra · 40 × 25 mm', w: 40, h: 25, zpl: true },
+  // Impresión por el diálogo del navegador / driver de Windows
+  termica5030: { grupo: 'driver',  nombre: 'Driver · térmica 50 × 30 mm (una por página)', w: 50, h: 30, hoja: false },
+  termica6040: { grupo: 'driver',  nombre: 'Driver · térmica 60 × 40 mm (una por página)', w: 60, h: 40, hoja: false },
+  a4:          { grupo: 'driver',  nombre: 'Driver · hoja A4, grilla de 4 × 9 (45 × 28 mm)', w: 45, h: 28, hoja: true, cols: 4, gap: 2, margen: 10 }
 };
+const GRUPOS_FORMATO = { zebra: 'Zebra ZD220 (ZPL, directo)', driver: 'Otra impresora / driver de Windows' };
 let ITEMS_ETIQ = [];
 
 function esc(s){
@@ -1304,14 +1327,24 @@ function abrirEtiquetas(filas, conservarCopias){
 
   const sel = document.getElementById('etqFormato');
   if(!sel.options.length){
-    sel.innerHTML = Object.entries(FORMATOS_ETIQUETA).map(([k, f]) => `<option value="${k}">${esc(f.nombre)}</option>`).join('');
+    sel.innerHTML = Object.entries(GRUPOS_FORMATO).map(([g, titulo]) =>
+      `<optgroup label="${esc(titulo)}">` +
+      Object.entries(FORMATOS_ETIQUETA).filter(([, f]) => f.grupo === g).map(([k, f]) => `<option value="${k}">${esc(f.nombre)}</option>`).join('') +
+      `</optgroup>`).join('');
+    sel.value = 'zebra5030';
     try{ const g = localStorage.getItem('etqFormato'); if(g && FORMATOS_ETIQUETA[g]) sel.value = g; }catch(e){}
-    try{ document.getElementById('etqPrecio').checked = localStorage.getItem('etqPrecio') === '1'; }catch(e){}
+    try{ const p = localStorage.getItem('etqPrecio'); if(p !== null) document.getElementById('etqPrecio').checked = p === '1'; }catch(e){}
   }
   document.getElementById('etqError').textContent = '';
   renderBatchEtiquetas();
   renderPreviewEtiquetas();
   document.getElementById('modalEtiquetas').classList.add('open');
+  if(formatoActual().zpl) verificarZebra();
+}
+
+function cambioFormatoEtiqueta(){
+  renderPreviewEtiquetas();
+  if(formatoActual().zpl) verificarZebra();
 }
 
 function renderBatchEtiquetas(){
@@ -1408,13 +1441,193 @@ function renderPreviewEtiquetas(){
     const porHoja = fmt.cols * 9;
     txt += ` (${Math.ceil(total / porHoja) || 0} hoja${Math.ceil(total / porHoja) === 1 ? '' : 's'} A4)`;
   }
-  document.getElementById('etqTotal').textContent = txt + '.';
+  document.getElementById('etqTotal').textContent = txt + (fmt.zpl ? '. La vista previa es aproximada: la Zebra dibuja el código con su propia tipografía.' : '.');
   document.getElementById('etqPrintBtn').disabled = total === 0;
+  document.getElementById('etqPrintBtn').textContent = fmt.zpl ? 'Imprimir en la Zebra' : 'Imprimir etiquetas';
+  document.getElementById('etqZplBtn').style.display = fmt.zpl ? '' : 'none';
+  document.getElementById('etqZplBtn').disabled = total === 0;
+  document.getElementById('etqZebraBox').style.display = fmt.zpl ? '' : 'none';
+}
+
+/* =========================================================
+   ZEBRA (ZPL) — impresión directa vía Zebra Browser Print
+   La ZD220 de 203 dpi imprime 8 puntos por mm. El código se dibuja con el
+   comando nativo ^BC (Code 128), no como imagen: sale nítido y escaneable.
+   ========================================================= */
+const ZEBRA = { device: null, base: null };
+
+// Texto → ASCII puro para ^FH: los caracteres fuera de ASCII (á, ñ, ·) se mandan
+// como bytes UTF-8 escapados (_C3_A1) y ^CI28 los interpreta. Así no depende de
+// cómo Browser Print codifique el texto que recibe.
+function zplTexto(s){
+  const bytes = new TextEncoder();
+  let out = '';
+  for(const ch of String(s ?? '').replace(/[\r\n\t]+/g, ' ')){
+    if(ch === '^' || ch === '~') out += ' ';
+    else if(ch === '_') out += '_5F';
+    else if(ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) < 127) out += ch;
+    else out += Array.from(bytes.encode(ch)).map(b => '_' + b.toString(16).toUpperCase().padStart(2, '0')).join('');
+  }
+  return out;
+}
+
+// Cantidad de módulos (barras finas) de un Code 128 de este texto, para centrarlo.
+function modulosCode128(cod){
+  const n = String(cod).length;
+  if(/^\d+$/.test(cod) && n % 2 === 0) return 11 * (n / 2 + 2) + 13;   // subset C
+  return 11 * (n + 2) + 13;                                             // cota superior (subset B)
+}
+
+function zplEtiqueta(item, fmt, conPrecio){
+  const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);
+  const s = fmt.w / 50;                                  // escala tipográfica respecto de 50 mm
+  const m = Math.round(8 * s);                           // margen
+  const fN = Math.round(26 * s), fM = Math.round(20 * s), fP = Math.round(30 * s), fC = Math.round(24 * s);
+  const ancho = PW - 2 * m;
+
+  // Nombre: hasta 2 líneas. Se reserva 1 o 2 líneas según el largo (estimación conservadora).
+  const porLinea = Math.floor(ancho / (fN * 0.55));
+  let nombre = String(item.producto || '').replace(/[\^~]/g, ' ').replace(/\s+/g, ' ').trim();
+  if(nombre.length > porLinea * 2 - 1) nombre = nombre.slice(0, porLinea * 2 - 2).trim() + '.';
+  const lineasNombre = nombre.length > porLinea - 4 ? 2 : 1;
+
+  const txtTalle = /^sin talle$/i.test(item.talle) ? '' : (/^[úu]nico$/i.test(item.talle) ? 'Talle único' : 'Talle ' + item.talle);
+  const meta = [txtTalle, item.estanteria].filter(Boolean).join(' - ');
+
+  const precio = item.precioDescuento || item.precioLista;
+  const hayPrecio = !!(conPrecio && precio);
+  const yNombre = m;
+  const yMeta = yNombre + lineasNombre * fN + 4;
+  const yBarras = yMeta + fM + 6;
+  const yPrecio = LL - m - fP;
+  // El número bajo las barras se imprime como texto propio (posición fija), no con la
+  // línea de interpretación de ^BC, para que el precio nunca se encime.
+  const yAbajo = hayPrecio ? yPrecio - 4 : LL - m;      // hasta dónde puede llegar el bloque barras + número
+  const alto = Math.max(40, yAbajo - yBarras - fC - 4);
+  const yCodigo = yBarras + alto + 4;
+
+  const mod = modulosCode128(item.codigo);
+  const BY = [4, 3, 2].find(b => (mod + 20) * b <= PW) || 2;   // ancho de módulo en puntos (20 módulos de zona libre)
+  const xBarras = Math.max(0, Math.round((PW - mod * BY) / 2));
+
+  const z = [];
+  z.push('^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0');
+  z.push(`^FO${m},${yNombre}^FB${ancho},${lineasNombre},0,C,0^A0N,${fN},${fN}^FH_^FD${zplTexto(nombre)}^FS`);
+  if(meta) z.push(`^FO${m},${yMeta}^FB${ancho},1,0,C,0^A0N,${fM},${fM}^FH_^FD${zplTexto(meta)}^FS`);
+  z.push(`^FO${xBarras},${yBarras}^BY${BY},3,${alto}^BCN,${alto},N,N,N,A^FD${zplTexto(item.codigo)}^FS`);
+  z.push(`^FO${m},${yCodigo}^FB${ancho},1,0,C,0^A0N,${fC},${fC}^FH_^FD${zplTexto(item.codigo)}^FS`);
+  if(hayPrecio) z.push(`^FO${m},${yPrecio}^FB${ancho},1,0,C,0^A0N,${fP},${fP}^FH_^FD${zplTexto(formatoMoneda(precio))}^FS`);
+  z.push(`^PQ${Math.max(1, item.copias)},0,1,N`, '^XZ');
+  return z.join('\n');
+}
+
+function zplLote(){
+  const fmt = formatoActual();
+  const conPrecio = document.getElementById('etqPrecio').checked;
+  return ITEMS_ETIQ.filter(i => i.codigo && i.copias > 0).map(i => zplEtiqueta(i, fmt, conPrecio)).join('\n') + '\n';
+}
+
+/* ---- Comunicación con Browser Print (servicio local en la PC de la impresora) ---- */
+function basesBrowserPrint(){
+  return location.protocol === 'https:'
+    ? ['https://localhost:9101/', 'http://localhost:9100/']   // si la página es https, el servicio usa el 9101
+    : ['http://localhost:9100/', 'https://localhost:9101/'];
+}
+
+async function bpFetch(ruta, opciones){
+  let ultimoError;
+  const bases = ZEBRA.base ? [ZEBRA.base] : basesBrowserPrint();
+  for(const base of bases){
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      const r = await fetch(base + ruta, { ...opciones, signal: ctrl.signal });
+      clearTimeout(t);
+      ZEBRA.base = base;
+      return r;
+    }catch(e){ ultimoError = e; }
+  }
+  throw ultimoError || new Error('Sin respuesta de Browser Print');
+}
+
+async function bpBuscarImpresora(){
+  // 1) la impresora predeterminada que se configuró en Browser Print
+  const rDef = await bpFetch('default?type=printer');
+  if(rDef.ok){
+    const txt = (await rDef.text()).trim();
+    try{ const d = JSON.parse(txt); if(d && d.uid) return d; }catch(e){}
+  }
+  // 2) si no hay predeterminada, la primera Zebra de la lista
+  const rAv = await bpFetch('available');
+  if(rAv.ok){
+    const lista = JSON.parse(await rAv.text());
+    const printers = (lista && lista.printer) || [];
+    return printers.find(p => /zd|zebra/i.test(p.name || '')) || printers[0] || null;
+  }
+  return null;
+}
+
+function bpEstado(texto, ok){
+  document.getElementById('etqZebraEstado').textContent = texto;
+  document.getElementById('etqZebraDot').className = 'dot ' + (ok === true ? 'ok' : ok === false ? 'mal' : '');
+  document.getElementById('etqZebraBox').classList.toggle('mal', ok === false);
+}
+
+async function verificarZebra(){
+  bpEstado('Buscando la Zebra…', null);
+  ZEBRA.device = null;
+  try{
+    const dev = await bpBuscarImpresora();
+    if(!dev){ bpEstado('Browser Print responde, pero no encuentra ninguna impresora. Revisá que la Zebra esté encendida y conectada.', false); return false; }
+    ZEBRA.device = dev;
+    bpEstado('Lista para imprimir: ' + dev.name, true);
+    return true;
+  }catch(e){
+    ZEBRA.base = null;
+    bpEstado('No hay conexión con Browser Print. Verificá que esté abierto en esta PC (ícono en la bandeja de Windows).', false);
+    return false;
+  }
+}
+
+async function imprimirZebra(){
+  const errorEl = document.getElementById('etqError');
+  const btn = document.getElementById('etqPrintBtn');
+  const zpl = zplLote();
+  const total = ITEMS_ETIQ.filter(i => i.codigo && i.copias > 0).reduce((a, i) => a + i.copias, 0);
+  if(!total){ errorEl.textContent = 'No hay etiquetas para imprimir.'; return; }
+  errorEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try{
+    if(!ZEBRA.device && !(await verificarZebra())){
+      errorEl.textContent = 'No se pudo conectar con la Zebra. Si es la primera vez, abrí https://localhost:9101/available en el navegador, aceptá el aviso del certificado y volvé a intentar.';
+      return;
+    }
+    const r = await bpFetch('write', { method: 'POST', body: JSON.stringify({ device: ZEBRA.device, data: zpl }) });
+    if(!r.ok) throw new Error('Browser Print respondió ' + r.status + ': ' + (await r.text()));
+    mostrarToast(`Enviadas ${total} etiqueta${total === 1 ? '' : 's'} a ${ZEBRA.device.name}.`, 'success');
+  }catch(e){
+    ZEBRA.device = null;
+    errorEl.textContent = 'No se pudo imprimir en la Zebra: ' + e.message + '. Podés usar "Descargar .zpl" como alternativa.';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Imprimir en la Zebra';
+  }
+}
+
+function descargarZPL(){
+  const zpl = zplLote();
+  if(zpl.trim() === '') return;
+  const blob = new Blob([zpl], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'etiquetas.zpl';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 /* ---- Impresión ---- */
 function imprimirEtiquetas(){
   const fmt = formatoActual();
+  if(fmt.zpl) return imprimirZebra();
   const conPrecio = document.getElementById('etqPrecio').checked;
   const errorEl = document.getElementById('etqError');
   const imprimibles = ITEMS_ETIQ.filter(i => i.codigo && i.copias > 0);
