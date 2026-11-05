@@ -695,6 +695,7 @@
       <span id="etqZebraEstado">Buscando la Zebra…</span>
       <button class="btn btn-ghost" type="button" onclick="verificarZebra()">Reintentar</button>
       <button class="btn btn-ghost" type="button" onclick="imprimirPruebaZebra()" title="Imprime una etiqueta con un marco del tamaño elegido y un código de barra, para comprobar medidas y calibración">Etiqueta de prueba</button>
+      <button class="btn btn-ghost" type="button" onclick="restablecerZebra()" title="Devuelve la Zebra a su configuración de fábrica. Usalo si quedó avanzando papel sin parar.">Restablecer impresora</button>
       <button class="btn btn-ghost" type="button" onclick="rolloContinuoZebra()" title="Para rollo de papel continuo, sin separaciones entre etiquetas: desactiva la búsqueda de gaps y fija el largo de la etiqueta elegida">Rollo continuo</button>
       <button class="btn btn-ghost" type="button" onclick="calibrarZebra()" title="Calibra el sensor de etiquetas de la Zebra (avanza varias etiquetas). Hacelo con el rollo cargado.">Calibrar rollo</button>
       <button class="btn btn-ghost" type="button" onclick="configuracionZebra()" title="Imprime la hoja de configuración de la Zebra (largo de etiqueta, darkness, sensor)">Imprimir configuración</button>
@@ -1601,7 +1602,7 @@ function zplEtiqueta(item, fmt, conPrecio){
   const xBarras = Math.max(0, Math.round((PW - mod * BY) / 2));
 
   const z = [];
-  z.push('^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^MNN', '^LH0,0');
+  z.push('^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0');
   z.push(`^FO${m},${yNombre}^FB${ancho},${lineas},0,C,0^A0N,${fN},${fN}^FH_^FD${zplTexto(nombre)}^FS`);
   if(meta) z.push(`^FO${m},${yMeta}^FB${ancho},1,0,C,0^A0N,${fM},${fM}^FH_^FD${zplTexto(meta)}^FS`);
   z.push(zplBarras(item.codigo, xBarras, yBarras, BY, alto).zpl);
@@ -1621,7 +1622,7 @@ function zplPrueba(fmt){
   const x = Math.max(0, Math.round((PW - mod * BY) / 2));
   const alto = Math.max(40, LL - 120);
   return [
-    '^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^MNN', '^LH0,0',
+    '^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0',
     `^FO0,0^GB${PW},${LL},3^FS`,
     `^FO8,10^FB${PW - 16},1,0,C,0^A0N,28,28^FDPRUEBA ${fmt.w} x ${fmt.h} mm^FS`,
     `^FO8,42^FB${PW - 16},1,0,C,0^A0N,22,22^FD${PW} x ${LL} puntos^FS`,
@@ -1638,25 +1639,25 @@ function zplDiagnostico(fmt){
   const cab = (letra, desc) => `^FO6,4^A0N,22,22^FD${letra}: ${desc}^FS`;
   const L = [];
   // A: lo más simple posible, sin ^PW/^LL/^CI/^BY, con línea de interpretación
-  L.push(['^XA', '^MNN', `^LL${LL}`, cab('A', 'basico'), '^FO20,34^BCN,70,Y,N,N^FD123456^FS', '^XZ']);
+  L.push(['^XA', cab('A', 'basico'), '^FO20,34^BCN,70,Y,N,N^FD123456^FS', '^XZ']);
   // B: con ancho de módulo explícito
-  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('B', 'BY2'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD123456^FS', '^XZ']);
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('B', 'BY2'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD123456^FS', '^XZ']);
   // C: Code 39 en vez de Code 128
-  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('C', 'Code39'), '^BY2,3,70', '^FO20,34^B3N,N,70,N,N^FD123456^FS', '^XZ']);
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('C', 'Code39'), '^BY2,3,70', '^FO20,34^B3N,N,70,N,N^FD123456^FS', '^XZ']);
   // D: bloque negro sólido (prueba que la impresora imprime gráficos/negro)
-  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('D', 'bloque negro'), '^FO20,34^GB200,60,60^FS', '^XZ']);
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('D', 'bloque negro'), '^FO20,34^GB200,60,60^FS', '^XZ']);
   // E: como las etiquetas reales (con ^CI28)
-  L.push(['^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^MNN', '^LH0,0', cab('E', 'como real'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD100002^FS', '^XZ']);
+  L.push(['^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0', cab('E', 'como real'), '^BY2,3,70', '^FO20,34^BCN,70,N,N,N^FD100002^FS', '^XZ']);
   // F: barras dibujadas a mano con ^GB (líneas de 3 y 6 puntos), sin ^BC
   const barras = [];
   let x = 20;
   [3, 6, 3, 9, 3, 6, 3, 3, 9, 3, 6, 3].forEach((w, i) => { if(i % 2 === 0) barras.push(`^FO${x},34^GB${w},70,${w}^FS`); x += w + 3; });
-  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('F', 'rayas ^GB'), ...barras, '^XZ']);
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('F', 'rayas ^GB'), ...barras, '^XZ']);
   // G: código de barras como imagen (^GF)
   const img = barrasComoImagen('123456', 2, 70);
-  if(img) L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('G', 'imagen ^GF'), `^FO20,34${img.zpl}^FS`, '^XZ']);
+  if(img) L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('G', 'imagen ^GF'), `^FO20,34${img.zpl}^FS`, '^XZ']);
   // H: bloque negro como imagen (^GF), 200 x 40 puntos
-  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, '^MNN', cab('H', 'bloque ^GF'), `^FO20,34^GFA,${25 * 40},${25 * 40},25,${'FF'.repeat(25 * 40)}^FS`, '^XZ']);
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('H', 'bloque ^GF'), `^FO20,34^GFA,${25 * 40},${25 * 40},25,${'FF'.repeat(25 * 40)}^FS`, '^XZ']);
   return L.map(l => l.join('\n')).join('\n') + '\n';
 }
 
@@ -1679,6 +1680,11 @@ function rolloContinuoZebra(){
   const fmt = formatoActual();
   const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);
   enviarComandoZebra(`^XA\n^MNN\n^PW${PW}\n^LL${LL}\n^JUS\n^XZ\n`, 'Impresora configurada para rollo continuo (' + fmt.w + ' x ' + fmt.h + ' mm).');
+}
+// Devuelve la impresora a la configuración de fábrica (deshace lo guardado con "Rollo continuo")
+function restablecerZebra(){
+  if(!confirm('Esto devuelve la Zebra a su configuración de fábrica (la intensidad y el sensor vuelven a los valores originales). ¿Continuar?')) return;
+  enviarComandoZebra('^XA\n^JUF\n^XZ\n', 'Restablecida a valores de fábrica. Apagá y prendé la impresora.');
 }
 function calibrarZebra(){ enviarComandoZebra('~JC\n', 'Calibrando: la impresora va a avanzar varias etiquetas. Esperá a que termine.'); }
 function configuracionZebra(){ enviarComandoZebra('~WC\n', 'Imprimiendo la hoja de configuración de la Zebra.'); }
