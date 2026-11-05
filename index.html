@@ -683,6 +683,7 @@
       </div>
     </div>
     <label class="check-line"><input type="checkbox" id="etqPrecio" onchange="renderPreviewEtiquetas()"> Incluir precio en la etiqueta</label>
+    <label class="check-line" title="Manda las barras como imagen en vez del comando de código de barras. Usalo si la Zebra imprime las barras cortadas o como una línea punteada."><input type="checkbox" id="etqBarrasImg" checked> Barras como imagen (Zebra)</label>
 
     <div class="field-row" id="etqCustom" style="display:none;">
       <div class="field"><label>Ancho de la etiqueta (mm)</label><input type="number" id="etqAncho" min="20" max="104" step="0.5" value="39" onchange="leerTamanoCustom()"></div>
@@ -1523,6 +1524,39 @@ function lineasEstimadas(texto, fontPts, anchoPts){
   return { lineas, maxCh };
 }
 
+// Barras como imagen (^GF): se dibuja el Code 128 en un canvas y se manda como mapa de bits.
+// Sirve para impresoras que no dibujan bien los comandos vectoriales (^BC, ^GB).
+function barrasComoImagen(texto, BY, alto){
+  try{
+    const cv = document.createElement('canvas');
+    JsBarcode(cv, String(texto), { format: 'CODE128', width: BY, height: alto, displayValue: false, margin: 0, background: '#ffffff', lineColor: '#000000' });
+    const w = cv.width, h = cv.height;
+    const px = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    const bpr = Math.ceil(w / 8);
+    let hex = '';
+    for(let y = 0; y < h; y++){
+      for(let bx = 0; bx < bpr; bx++){
+        let b = 0;
+        for(let k = 0; k < 8; k++){
+          const x = bx * 8 + k;
+          if(x < w && px[(y * w + x) * 4] < 128 && px[(y * w + x) * 4 + 3] > 0) b |= (0x80 >> k);
+        }
+        hex += (b < 16 ? '0' : '') + b.toString(16).toUpperCase();
+      }
+    }
+    return { w, h, zpl: `^GFA,${bpr * h},${bpr * h},${bpr},${hex}` };
+  }catch(e){ return null; }
+}
+function usarBarrasImagen(){ const el = document.getElementById('etqBarrasImg'); return !el || el.checked; }
+// Devuelve el comando ZPL de las barras en (x,y): imagen si está activado, ^BC si no.
+function zplBarras(texto, x, y, BY, alto){
+  if(usarBarrasImagen()){
+    const img = barrasComoImagen(texto, BY, alto);
+    if(img) return { w: img.w, zpl: `^FO${x},${y}${img.zpl}^FS` };
+  }
+  return { w: null, zpl: `^FO${x},${y}^BY${BY},3,${alto}^BCN,${alto},N,N,N^FD${zplTexto(texto)}^FS` };
+}
+
 function zplEtiqueta(item, fmt, conPrecio){
   const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);   // 203 dpi = 8 puntos por mm
   const m = Math.max(5, Math.round(PW * 0.02));                    // margen
@@ -1567,7 +1601,7 @@ function zplEtiqueta(item, fmt, conPrecio){
   z.push('^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0');
   z.push(`^FO${m},${yNombre}^FB${ancho},${lineas},0,C,0^A0N,${fN},${fN}^FH_^FD${zplTexto(nombre)}^FS`);
   if(meta) z.push(`^FO${m},${yMeta}^FB${ancho},1,0,C,0^A0N,${fM},${fM}^FH_^FD${zplTexto(meta)}^FS`);
-  z.push(`^FO${xBarras},${yBarras}^BY${BY},3,${alto}^BCN,${alto},N,N,N^FD${zplTexto(item.codigo)}^FS`);
+  z.push(zplBarras(item.codigo, xBarras, yBarras, BY, alto).zpl);
   z.push(`^FO${m},${yCodigo}^FB${ancho},1,0,C,0^A0N,${fC},${fC}^FH_^FD${zplTexto(item.codigo)}^FS`);
   if(hayPrecio) z.push(`^FO${m},${yPrecio}^FB${ancho},1,0,C,0^A0N,${fP},${fP}^FH_^FD${zplTexto(formatoMoneda(precio))}^FS`);
   z.push(`^PQ${Math.max(1, item.copias)},0,1,N`, '^XZ');
@@ -1588,7 +1622,7 @@ function zplPrueba(fmt){
     `^FO0,0^GB${PW},${LL},3^FS`,
     `^FO8,10^FB${PW - 16},1,0,C,0^A0N,28,28^FDPRUEBA ${fmt.w} x ${fmt.h} mm^FS`,
     `^FO8,42^FB${PW - 16},1,0,C,0^A0N,22,22^FD${PW} x ${LL} puntos^FS`,
-    `^FO${x},72^BY${BY},3,${alto}^BCN,${alto},N,N,N^FD123456^FS`,
+    zplBarras('123456', x, 72, BY, alto).zpl,
     `^FO8,${72 + alto + 4}^FB${PW - 16},1,0,C,0^A0N,22,22^FD123456^FS`,
     '^PQ1,0,1,N', '^XZ'
   ].join('\n') + '\n';
@@ -1615,6 +1649,11 @@ function zplDiagnostico(fmt){
   let x = 20;
   [3, 6, 3, 9, 3, 6, 3, 3, 9, 3, 6, 3].forEach((w, i) => { if(i % 2 === 0) barras.push(`^FO${x},34^GB${w},70,${w}^FS`); x += w + 3; });
   L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('F', 'rayas ^GB'), ...barras, '^XZ']);
+  // G: código de barras como imagen (^GF)
+  const img = barrasComoImagen('123456', 2, 70);
+  if(img) L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('G', 'imagen ^GF'), `^FO20,34${img.zpl}^FS`, '^XZ']);
+  // H: bloque negro como imagen (^GF), 200 x 40 puntos
+  L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('H', 'bloque ^GF'), `^FO20,34^GFA,${25 * 40},${25 * 40},25,${'FF'.repeat(25 * 40)}^FS`, '^XZ']);
   return L.map(l => l.join('\n')).join('\n') + '\n';
 }
 
@@ -1625,7 +1664,7 @@ async function imprimirDiagnosticoZebra(){
     if(!ZEBRA.device && !(await verificarZebra())){ errorEl.textContent = 'No se pudo conectar con la Zebra.'; return; }
     const r = await bpFetch('write', { method: 'POST', body: JSON.stringify({ device: ZEBRA.device, data: zplDiagnostico(formatoActual()) }) });
     if(!r.ok) throw new Error('Browser Print respondió ' + r.status);
-    mostrarToast('Diagnóstico enviado: salen 6 etiquetas (A a F).', 'success');
+    mostrarToast('Diagnóstico enviado: salen 8 etiquetas (A a H).', 'success');
   }catch(e){
     ZEBRA.device = null;
     errorEl.textContent = 'No se pudo imprimir el diagnóstico: ' + e.message;
