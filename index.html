@@ -684,10 +684,16 @@
     </div>
     <label class="check-line"><input type="checkbox" id="etqPrecio" onchange="renderPreviewEtiquetas()"> Incluir precio en la etiqueta</label>
 
+    <div class="field-row" id="etqCustom" style="display:none;">
+      <div class="field"><label>Ancho de la etiqueta (mm)</label><input type="number" id="etqAncho" min="20" max="104" step="0.5" value="39" onchange="leerTamanoCustom()"></div>
+      <div class="field"><label>Alto de la etiqueta (mm)</label><input type="number" id="etqAlto" min="15" max="150" step="0.5" value="25" onchange="leerTamanoCustom()"></div>
+    </div>
+
     <div class="zebra-estado" id="etqZebraBox" style="display:none;">
       <span class="dot" id="etqZebraDot"></span>
       <span id="etqZebraEstado">Buscando la Zebra…</span>
       <button class="btn btn-ghost" type="button" onclick="verificarZebra()">Reintentar</button>
+      <button class="btn btn-ghost" type="button" onclick="imprimirPruebaZebra()" title="Imprime una etiqueta con un marco del tamaño elegido y un código de barra, para comprobar medidas y calibración">Etiqueta de prueba</button>
     </div>
 
     <div class="etq-preview" id="etqPreview"></div>
@@ -1275,7 +1281,8 @@ const FORMATOS_ETIQUETA = {
   // Zebra ZD220 (203 dpi = 8 puntos/mm) — se imprime en ZPL nativo vía Zebra Browser Print
   zebra5030:   { grupo: 'zebra',   nombre: 'Zebra · 50 × 30 mm', w: 50, h: 30, zpl: true },
   zebra6040:   { grupo: 'zebra',   nombre: 'Zebra · 60 × 40 mm', w: 60, h: 40, zpl: true },
-  zebra4025:   { grupo: 'zebra',   nombre: 'Zebra · 40 × 25 mm', w: 40, h: 25, zpl: true },
+  zebra3925:   { grupo: 'zebra',   nombre: 'Zebra · 39 × 25 mm (rollo de 3,9 cm)', w: 39, h: 25, zpl: true },
+  zebraCustom: { grupo: 'zebra',   nombre: 'Zebra · tamaño personalizado…', w: 39, h: 25, zpl: true, custom: true },
   // Impresión por el diálogo del navegador / driver de Windows
   termica5030: { grupo: 'driver',  nombre: 'Driver · térmica 50 × 30 mm (una por página)', w: 50, h: 30, hoja: false },
   termica6040: { grupo: 'driver',  nombre: 'Driver · térmica 60 × 40 mm (una por página)', w: 60, h: 40, hoja: false },
@@ -1334,7 +1341,14 @@ function abrirEtiquetas(filas, conservarCopias){
     sel.value = 'zebra5030';
     try{ const g = localStorage.getItem('etqFormato'); if(g && FORMATOS_ETIQUETA[g]) sel.value = g; }catch(e){}
     try{ const p = localStorage.getItem('etqPrecio'); if(p !== null) document.getElementById('etqPrecio').checked = p === '1'; }catch(e){}
+    try{
+      const c = JSON.parse(localStorage.getItem('etqCustom') || 'null');
+      if(c && c.w && c.h){ FORMATOS_ETIQUETA.zebraCustom.w = c.w; FORMATOS_ETIQUETA.zebraCustom.h = c.h; }
+    }catch(e){}
+    document.getElementById('etqAncho').value = FORMATOS_ETIQUETA.zebraCustom.w;
+    document.getElementById('etqAlto').value = FORMATOS_ETIQUETA.zebraCustom.h;
   }
+  mostrarMedidasCustom();
   document.getElementById('etqError').textContent = '';
   renderBatchEtiquetas();
   renderPreviewEtiquetas();
@@ -1343,8 +1357,25 @@ function abrirEtiquetas(filas, conservarCopias){
 }
 
 function cambioFormatoEtiqueta(){
+  mostrarMedidasCustom();
   renderPreviewEtiquetas();
   if(formatoActual().zpl) verificarZebra();
+}
+
+// Medidas personalizadas (se recuerdan en este navegador)
+function mostrarMedidasCustom(){
+  const esCustom = document.getElementById('etqFormato').value === 'zebraCustom';
+  document.getElementById('etqCustom').style.display = esCustom ? '' : 'none';
+}
+function leerTamanoCustom(){
+  const f = FORMATOS_ETIQUETA.zebraCustom;
+  const a = parseFloat(document.getElementById('etqAncho').value), h = parseFloat(document.getElementById('etqAlto').value);
+  f.w = Math.min(104, Math.max(20, isFinite(a) ? a : 39));
+  f.h = Math.min(150, Math.max(15, isFinite(h) ? h : 25));
+  document.getElementById('etqAncho').value = f.w;
+  document.getElementById('etqAlto').value = f.h;
+  try{ localStorage.setItem('etqCustom', JSON.stringify({ w: f.w, h: f.h })); }catch(e){}
+  renderPreviewEtiquetas();
 }
 
 function renderBatchEtiquetas(){
@@ -1471,54 +1502,95 @@ function zplTexto(s){
   return out;
 }
 
-// Cantidad de módulos (barras finas) de un Code 128 de este texto, para centrarlo.
+// Cantidad de módulos (barras finas) del Code 128 en subset B (el estándar de ZPL, sin
+// opciones especiales: lo entiende cualquier firmware). 6 dígitos = 101 módulos.
 function modulosCode128(cod){
-  const n = String(cod).length;
-  if(/^\d+$/.test(cod) && n % 2 === 0) return 11 * (n / 2 + 2) + 13;   // subset C
-  return 11 * (n + 2) + 13;                                             // cota superior (subset B)
+  return 11 * (String(cod).length + 2) + 13;
+}
+
+// Cuántas líneas ocupa un texto en un ancho dado (estimación conservadora: si la
+// impresora entra más texto por línea, sobra espacio; nunca falta).
+function lineasEstimadas(texto, fontPts, anchoPts){
+  const maxCh = Math.max(4, Math.floor(anchoPts / (fontPts * 0.58)));
+  let lineas = 1, actual = 0;
+  for(const p of texto.split(' ')){
+    if(p.length > maxCh){ lineas += actual ? 1 : 0; lineas += Math.ceil(p.length / maxCh) - 1; actual = p.length % maxCh || maxCh; continue; }
+    if(actual === 0) actual = p.length;
+    else if(actual + 1 + p.length <= maxCh) actual += 1 + p.length;
+    else { lineas++; actual = p.length; }
+  }
+  return { lineas, maxCh };
 }
 
 function zplEtiqueta(item, fmt, conPrecio){
-  const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);
-  const s = fmt.w / 50;                                  // escala tipográfica respecto de 50 mm
-  const m = Math.round(8 * s);                           // margen
-  const fN = Math.round(26 * s), fM = Math.round(20 * s), fP = Math.round(30 * s), fC = Math.round(24 * s);
+  const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);   // 203 dpi = 8 puntos por mm
+  const m = Math.max(5, Math.round(PW * 0.02));                    // margen
   const ancho = PW - 2 * m;
+  const escala = fmt.w >= 55 ? 1.25 : 1;
 
-  // Nombre: hasta 2 líneas. Se reserva 1 o 2 líneas según el largo (estimación conservadora).
-  const porLinea = Math.floor(ancho / (fN * 0.55));
-  let nombre = String(item.producto || '').replace(/[\^~]/g, ' ').replace(/\s+/g, ' ').trim();
-  if(nombre.length > porLinea * 2 - 1) nombre = nombre.slice(0, porLinea * 2 - 2).trim() + '.';
-  const lineasNombre = nombre.length > porLinea - 4 ? 2 : 1;
-
+  const nombreOrig = String(item.producto || '').replace(/[\^~]/g, ' ').replace(/\s+/g, ' ').trim();
   const txtTalle = /^sin talle$/i.test(item.talle) ? '' : (/^[úu]nico$/i.test(item.talle) ? 'Talle único' : 'Talle ' + item.talle);
   const meta = [txtTalle, item.estanteria].filter(Boolean).join(' - ');
-
   const precio = item.precioDescuento || item.precioLista;
   const hayPrecio = !!(conPrecio && precio);
+
+  // Se elige la letra más grande para la que entra el nombre en hasta 3 renglones y
+  // todavía queda alto suficiente (>= 7 mm) para las barras.
+  const BARRAS_MIN = 56;
+  let fN, fM, fC, fP, nombre = nombreOrig, lineas, alto;
+  const candidatos = [32, 28, 24, 20].map(f => Math.round(f * escala));
+  for(let k = 0; k < candidatos.length; k++){
+    fN = candidatos[k]; fM = Math.round(fN * 0.75); fC = Math.round(fN * 0.75); fP = fN;
+    const est = lineasEstimadas(nombre, fN, ancho);
+    lineas = est.lineas;
+    const ultimo = k === candidatos.length - 1;
+    if(lineas > 3 && !ultimo) continue;
+    if(lineas > 3){ nombre = nombre.slice(0, est.maxCh * 3 - 2).trim() + '.'; lineas = 3; }
+    const fijo = m + lineas * fN + 4 + (meta ? fM + 4 : 0) + 4 + fC + (hayPrecio ? 4 + fP : 0) + m;
+    alto = LL - fijo;
+    if(alto >= BARRAS_MIN || ultimo) break;
+  }
+  alto = Math.max(40, alto);
+
   const yNombre = m;
-  const yMeta = yNombre + lineasNombre * fN + 4;
-  const yBarras = yMeta + fM + 6;
-  const yPrecio = LL - m - fP;
-  // El número bajo las barras se imprime como texto propio (posición fija), no con la
-  // línea de interpretación de ^BC, para que el precio nunca se encime.
-  const yAbajo = hayPrecio ? yPrecio - 4 : LL - m;      // hasta dónde puede llegar el bloque barras + número
-  const alto = Math.max(40, yAbajo - yBarras - fC - 4);
+  const yMeta = yNombre + lineas * fN + 4;
+  const yBarras = yMeta + (meta ? fM + 4 : 0);
   const yCodigo = yBarras + alto + 4;
+  const yPrecio = yCodigo + fC + 4;
 
   const mod = modulosCode128(item.codigo);
-  const BY = [4, 3, 2].find(b => (mod + 20) * b <= PW) || 2;   // ancho de módulo en puntos (20 módulos de zona libre)
+  const BY = [4, 3, 2].find(b => (mod + 20) * b <= PW) || 2;       // ancho de módulo en puntos (con zona libre)
   const xBarras = Math.max(0, Math.round((PW - mod * BY) / 2));
 
   const z = [];
   z.push('^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0');
-  z.push(`^FO${m},${yNombre}^FB${ancho},${lineasNombre},0,C,0^A0N,${fN},${fN}^FH_^FD${zplTexto(nombre)}^FS`);
+  z.push(`^FO${m},${yNombre}^FB${ancho},${lineas},0,C,0^A0N,${fN},${fN}^FH_^FD${zplTexto(nombre)}^FS`);
   if(meta) z.push(`^FO${m},${yMeta}^FB${ancho},1,0,C,0^A0N,${fM},${fM}^FH_^FD${zplTexto(meta)}^FS`);
-  z.push(`^FO${xBarras},${yBarras}^BY${BY},3,${alto}^BCN,${alto},N,N,N,A^FD${zplTexto(item.codigo)}^FS`);
+  z.push(`^FO${xBarras},${yBarras}^BY${BY},3,${alto}^BCN,${alto},N,N,N^FD${zplTexto(item.codigo)}^FS`);
   z.push(`^FO${m},${yCodigo}^FB${ancho},1,0,C,0^A0N,${fC},${fC}^FH_^FD${zplTexto(item.codigo)}^FS`);
   if(hayPrecio) z.push(`^FO${m},${yPrecio}^FB${ancho},1,0,C,0^A0N,${fP},${fP}^FH_^FD${zplTexto(formatoMoneda(precio))}^FS`);
   z.push(`^PQ${Math.max(1, item.copias)},0,1,N`, '^XZ');
   return z.join('\n');
+}
+
+// Etiqueta de prueba: marco del tamaño exacto + barra de ejemplo. Si el marco no se ve
+// completo en la etiqueta, la medida elegida no coincide con el rollo o la impresora
+// necesita calibrar el sensor.
+function zplPrueba(fmt){
+  const PW = Math.round(fmt.w * 8), LL = Math.round(fmt.h * 8);
+  const mod = modulosCode128('123456');
+  const BY = [4, 3, 2].find(b => (mod + 20) * b <= PW) || 2;
+  const x = Math.max(0, Math.round((PW - mod * BY) / 2));
+  const alto = Math.max(40, LL - 120);
+  return [
+    '^XA', '^CI28', `^PW${PW}`, `^LL${LL}`, '^LH0,0',
+    `^FO0,0^GB${PW},${LL},3^FS`,
+    `^FO8,10^FB${PW - 16},1,0,C,0^A0N,28,28^FDPRUEBA ${fmt.w} x ${fmt.h} mm^FS`,
+    `^FO8,42^FB${PW - 16},1,0,C,0^A0N,22,22^FD${PW} x ${LL} puntos^FS`,
+    `^FO${x},72^BY${BY},3,${alto}^BCN,${alto},N,N,N^FD123456^FS`,
+    `^FO8,${72 + alto + 4}^FB${PW - 16},1,0,C,0^A0N,22,22^FD123456^FS`,
+    '^PQ1,0,1,N', '^XZ'
+  ].join('\n') + '\n';
 }
 
 function zplLote(){
@@ -1610,6 +1682,20 @@ async function imprimirZebra(){
     errorEl.textContent = 'No se pudo imprimir en la Zebra: ' + e.message + '. Podés usar "Descargar .zpl" como alternativa.';
   }finally{
     btn.disabled = false; btn.textContent = 'Imprimir en la Zebra';
+  }
+}
+
+async function imprimirPruebaZebra(){
+  const errorEl = document.getElementById('etqError');
+  errorEl.textContent = '';
+  try{
+    if(!ZEBRA.device && !(await verificarZebra())){ errorEl.textContent = 'No se pudo conectar con la Zebra.'; return; }
+    const r = await bpFetch('write', { method: 'POST', body: JSON.stringify({ device: ZEBRA.device, data: zplPrueba(formatoActual()) }) });
+    if(!r.ok) throw new Error('Browser Print respondió ' + r.status);
+    mostrarToast('Etiqueta de prueba enviada.', 'success');
+  }catch(e){
+    ZEBRA.device = null;
+    errorEl.textContent = 'No se pudo imprimir la prueba: ' + e.message;
   }
 }
 
