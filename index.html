@@ -695,6 +695,8 @@
       <span id="etqZebraEstado">Buscando la Zebra…</span>
       <button class="btn btn-ghost" type="button" onclick="verificarZebra()">Reintentar</button>
       <button class="btn btn-ghost" type="button" onclick="imprimirPruebaZebra()" title="Imprime una etiqueta con un marco del tamaño elegido y un código de barra, para comprobar medidas y calibración">Etiqueta de prueba</button>
+      <button class="btn btn-ghost" type="button" onclick="calibrarZebra()" title="Calibra el sensor de etiquetas de la Zebra (avanza varias etiquetas). Hacelo con el rollo cargado.">Calibrar rollo</button>
+      <button class="btn btn-ghost" type="button" onclick="configuracionZebra()" title="Imprime la hoja de configuración de la Zebra (largo de etiqueta, darkness, sensor)">Imprimir configuración</button>
       <button class="btn btn-ghost" type="button" onclick="imprimirDiagnosticoZebra()" title="Imprime 6 etiquetas (A a F) con distintas variantes de código de barras para detectar cuál acepta la impresora">Diagnóstico de barras</button>
     </div>
 
@@ -1656,6 +1658,23 @@ function zplDiagnostico(fmt){
   L.push(['^XA', `^PW${PW}`, `^LL${LL}`, cab('H', 'bloque ^GF'), `^FO20,34^GFA,${25 * 40},${25 * 40},25,${'FF'.repeat(25 * 40)}^FS`, '^XZ']);
   return L.map(l => l.join('\n')).join('\n') + '\n';
 }
+
+// Comandos de mantenimiento: ~JC calibra el sensor de etiquetas; ~WC imprime la configuración
+async function enviarComandoZebra(zpl, aviso){
+  const errorEl = document.getElementById('etqError');
+  errorEl.textContent = '';
+  try{
+    if(!ZEBRA.device && !(await verificarZebra())){ errorEl.textContent = 'No se pudo conectar con la Zebra.'; return; }
+    const r = await bpFetch('write', { method: 'POST', body: JSON.stringify({ device: ZEBRA.device, data: zpl }) });
+    if(!r.ok) throw new Error('Browser Print respondió ' + r.status);
+    mostrarToast(aviso, 'success');
+  }catch(e){
+    ZEBRA.device = null;
+    errorEl.textContent = 'No se pudo enviar el comando: ' + e.message;
+  }
+}
+function calibrarZebra(){ enviarComandoZebra('~JC\n', 'Calibrando: la impresora va a avanzar varias etiquetas. Esperá a que termine.'); }
+function configuracionZebra(){ enviarComandoZebra('~WC\n', 'Imprimiendo la hoja de configuración de la Zebra.'); }
 
 async function imprimirDiagnosticoZebra(){
   const errorEl = document.getElementById('etqError');
